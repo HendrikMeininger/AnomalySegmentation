@@ -1,0 +1,17 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="cv2.dnn" />
+          <option value="cv2.imread" />
+          <option value="cv2.*" />
+          <option value="float.backward" />
+          <option value="float.item" />
+          <option value="int.data" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>

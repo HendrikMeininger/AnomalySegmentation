@@ -161,7 +161,7 @@ class Tester(object):
         score_list = [score]
 
         score_list = score_list + self.__get_flip_scores(img_input)
-        # score_list = score_list + self.__get_rotation_scores(img_input)
+        score_list = score_list + self.__get_rotation_scores(img_input)
         # score_list = score_list + self.__get_brightness_scores(img_input, threshold)
 
         final_score = self.__combine_scores(score_list)
@@ -183,8 +183,7 @@ class Tester(object):
         double_flip_score = self.__score(double_flip)
         double_flip_score = np.flipud(np.fliplr(double_flip_score))
 
-        # return [vertical_flip_score, horizontal_flip_score, double_flip_score]
-        return [vertical_flip_score]
+        return [vertical_flip_score, horizontal_flip_score, double_flip_score]
 
     def __get_rotation_scores(self, img_input):
         # Rotate image 90

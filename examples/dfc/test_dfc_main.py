@@ -7,9 +7,14 @@ from source.utils.performance_measurement import Timer
 def main():
     Timer.start_timer()
 
-    # test_data("capsule", "objects", False)
-    # test_data("capsule", "objects", True)
-    display_predictions("capsule", "objects", True)
+    test_data("leather", "textures", False)
+
+    Timer.log_time("Without aug")
+
+    test_data("leather", "textures", True)
+    # display_predictions("capsule", "objects", True)
+
+    Timer.log_time("With aug")
 
     Timer.print_task_times()
 
@@ -18,18 +23,18 @@ def display_predictions(data, data_type, augmentation):
     print("\nData: ", data)
     tester = Tester.from_dataset_dir(dataset_dir=f"D:/mvtec_anomaly_detection/{data}",
                                      dataset_type=data_type,
-                                     model_path=f'D:/models/DFC/{data}/match.pt',
-                                     debugging=False,
+                                     model_path=f'D:/models/PDFC/{data}/big/match.pt',
+                                     debugging=True,
                                      augmentation=augmentation)
     tester.display_predictions()
 
 
 def test_data(data, data_type, augmentation):
     print("\nData: ", data)
-    tester = Tester.from_dataset_dir(dataset_dir=f"D:/mvtec_anomaly_detection/{data}",
+    tester = Tester.from_dataset_dir(dataset_dir=f"D:/datasets/mvtec_anomaly_detection/{data}",
                                      dataset_type=data_type,
-                                     model_path=f'D:/models/DFC/{data}/match.pt',
-                                     debugging=False,
+                                     model_path=f'D:/models/PDFC/{data}/big/match.pt',
+                                     debugging=True,
                                      augmentation=augmentation)
     tester.evaluate()
 
