@@ -1,4 +1,3 @@
-import sys
 from typing import Tuple, Union, List
 
 import numpy as np
@@ -8,8 +7,8 @@ import torch
 from torch import Tensor, device as Device
 from torch.utils.data import DataLoader
 
-from source.models.padim_backbone.base import PaDiMBase
-from source.models.padim_backbone.utils.distance import mahalanobis_multi, mahalanobis_sq
+from source.models.PaDiM.backbone.base import PaDiMBase
+from source.models.PaDiM.utils.distance import mahalanobis_multi, mahalanobis_sq
 
 
 class PaDiM(PaDiMBase):

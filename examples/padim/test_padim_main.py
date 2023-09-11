@@ -1,4 +1,4 @@
-from source.models.PaDiM.tester import Tester
+from source.models.PaDiM.base_padim.tester import Tester
 from source.utils.performance_measurement import Timer
 
 

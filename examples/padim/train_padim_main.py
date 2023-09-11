@@ -1,6 +1,5 @@
 from source.datasets import train_dataset
-from source.models.PaDiM.trainer import Trainer
-from source.utils.performance_measurement import Timer
+from source.models.PaDiM.base_padim.trainer import Trainer
 
 
 def main():

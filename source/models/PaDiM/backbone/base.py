@@ -3,8 +3,8 @@ from typing import Union, Tuple
 import torch
 from torch import Tensor, device as Device
 
-from source.models.padim_backbone.utils import embeddings_concat
-from source.models.padim_backbone.backbones import ResNet18, ResNet50, WideResNet50
+from source.models.PaDiM.utils import embeddings_concat
+from source.models.PaDiM.backbone import ResNet18, ResNet50, WideResNet50
 
 
 class PaDiMBase:

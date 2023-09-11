@@ -1,5 +1,5 @@
 from source.datasets import train_dataset
-from source.models.patch_padim.trainer import Trainer
+from source.models.PaDiM.patch_padim.trainer import Trainer
 from source.utils.performance_measurement import Timer
 
 

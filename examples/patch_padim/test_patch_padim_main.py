@@ -1,8 +1,5 @@
-from source.datasets import train_dataset
-from source.models.patch_padim.tester import Tester
-from source.models.patch_padim.trainer import Trainer
+from source.models.PaDiM.patch_padim.tester import Tester
 from source.utils.performance_measurement import Timer
-from source.models.patch_dfc.trainer import Trainer as DFCTrainer
 
 
 # !! Augmentations for self-ensembling must be adapted in the tester class.

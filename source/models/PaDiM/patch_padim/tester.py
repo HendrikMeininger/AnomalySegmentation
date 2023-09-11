@@ -11,9 +11,7 @@ import torchvision.transforms.functional as TF
 import torch.nn.functional as F
 from source.datasets.test_dataset import TestDataset
 from source.utils import visualization
-from source.utils.performance_measurement import Timer
-from source.models.padim_backbone.padim import PaDiM
-from source.models.padim_backbone.utils import mean_smoothing
+from source.models.PaDiM.backbone.padim import PaDiM
 import source.evaluation.eval as evaluation
 
 

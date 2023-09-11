@@ -6,13 +6,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
-from scipy.ndimage import rotate
 
 from source.datasets.test_dataset import TestDataset
 from source.utils import visualization
-from source.utils.performance_measurement import Timer
-from source.models.padim_backbone.padim import PaDiM
-from source.models.padim_backbone.utils import mean_smoothing
+from source.models.PaDiM.backbone.padim import PaDiM
 import torch.nn.functional as F
 import source.evaluation.eval as evaluation
 import torchvision.transforms.functional as TF
