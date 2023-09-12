@@ -1,41 +1,25 @@
-import os
 import random
-
-import numpy as np
-from typing import List
-
-import torch
+from typing import List, Tuple
 from PIL import Image
-from scipy.spatial.transform import Rotation
 from torch.utils.data import Dataset
-from torchvision.transforms import transforms, RandomHorizontalFlip, RandomRotation, \
-    RandomVerticalFlip, RandomAdjustSharpness, RandomAutocontrast, Resize, InterpolationMode
+from torchvision.transforms import transforms
 
 from source.datasets.anomaly_creator.anomaly_creator import AnomalyCreator
-from source.utils import visualization
 
 """
-Dataset to train DFC model
-Data can be augmented
+    Dataset to train DFC SPADE or PaDiM model
+    Data can be augmented
 """
-
-
-def get_train_img_paths(path_to_dataset: str) -> List[str]:
-    train_data_path = path_to_dataset + '/train/good'
-    image_paths = []
-
-    for root, dirs, files in os.walk(train_data_path):
-        for file in files:
-            image_paths.append(os.path.join(root, file))
-
-    return image_paths
 
 
 class TrainDataset(Dataset):
 
-    def __init__(self, image_paths, imagenet_dir, img_size=256, mask_size=1024,
-                 horizontal_flip=False, vertical_flip=False, rotate=False, adjust_sharpness=False,
-                 auto_contrast=False, color_jitter=False, anomaly_size='all', method='all'):
+    def __init__(self, image_paths: List[str], imagenet_dir: str, img_size: int = 256, mask_size: int = 1024,
+                 rot_90: bool = False, rot_180: bool = False, rot_270: bool = False, h_flip: bool = False,
+                 h_flip_rot_90: bool = False, h_flip_rot_180: bool = False, h_flip_rot_270: bool = False,
+                 self_supervised_training: bool = True,
+                 mean: Tuple[float] = (0.485, 0.456, 0.406), std: Tuple[float] = (0.229, 0.224, 0.225),
+                 dfc_anomaly_size: str = 'big', method: str = 'dfc', cutpaste_mode: str = 'all'):
 
         self.image_paths = image_paths
         self.images = []
@@ -43,75 +27,89 @@ class TrainDataset(Dataset):
         self.img_size = img_size
         self.mask_size = mask_size
         self.len = len(self.image_paths)
-        self.mean = [0.485, 0.456, 0.406]
-        self.std = [0.229, 0.224, 0.225]
-        self.rotate = rotate
+        self.mean = list(mean)
+        self.std = list(std)
+
+        self.rot_90 = rot_90
+        self.rot_180 = rot_180
+        self.rot_270 = rot_270
+        self.h_flip = h_flip
+        self.h_flip_rot_90 = h_flip_rot_90
+        self.h_flip_rot_180 = h_flip_rot_180
+        self.h_flip_rot_270 = h_flip_rot_270
+
+        self.self_supervised_training = self_supervised_training
 
         for image_path in image_paths:
             img = Image.open(image_path).convert('RGB')
             img = img.resize((self.img_size, self.img_size))
             self.images.append(img)
 
-        self.__build_transforms(horizontal_flip, vertical_flip, color_jitter,
-                                rotate, adjust_sharpness, auto_contrast)
+        self.__build_transforms()
 
-        self.anomaly_creator = AnomalyCreator(img_size, mask_size, self.mean, self.std, imagenet_dir,
-                                              dfc_anomaly_size=anomaly_size, method=method, cutpaste_mode='all')
+        if self.self_supervised_training:
+            self.anomaly_creator = AnomalyCreator(img_size=img_size, mask_size=mask_size, mean=self.mean, std=self.std,
+                                                  imagenet_dir=imagenet_dir, method=method,
+                                                  dfc_anomaly_size=dfc_anomaly_size, cutpaste_mode=cutpaste_mode)
 
     def __getitem__(self, index):
-        # image_path = self.image_paths[index]
-        # img = Image.open(image_path)
         img = self.images[index]
-        transformed_img = self.augmentation_transform(img)
+        augmented_img = self.__augment_img(img)
 
-        if self.rotate:
-            if random.random() < 0.5:
-                degrees = random.choice([90, 180, 270])
-                # degrees = 180
-                transformed_img = transformed_img.rotate(degrees)
+        if self.self_supervised_training:
+            img_normal, img_abnormal, mask_normal, mask_abnormal = \
+                self.anomaly_creator(augmented_img)
 
-        img_normal, img_abnormal, mask_normal, mask_abnormal = \
-            self.anomaly_creator(transformed_img)
+            img_abnormal = Image.fromarray(img_abnormal)
 
-        img_abnormal = Image.fromarray(img_abnormal)
+            img_normal = self.transform(img_normal)
+            img_abnormal = self.transform(img_abnormal)
 
-        img_normal = self.transform(img_normal)
-        img_abnormal = self.transform(img_abnormal)
-
-        return img_normal, img_abnormal, mask_normal, mask_abnormal
+            return img_normal, img_abnormal, mask_normal, mask_abnormal
+        else:
+            return self.transform(augmented_img)
 
     def __len__(self):
         return self.len
 
     # region private methods
 
-    def __build_transforms(self, horizontal_flip, vertical_flip, color_jitter,
-                           rotate, adjust_sharpness, auto_contrast):
-        self.augmentation_transform = transforms.Compose([])
-
-        if horizontal_flip:
-            random_flip = RandomHorizontalFlip(0.5)
-            self.augmentation_transform.transforms.append(random_flip)
-        if vertical_flip:
-            random_flip = RandomVerticalFlip(0.5)
-            self.augmentation_transform.transforms.append(random_flip)
-        """if rotate:
-            random_rotation = RandomRotation(degrees=(-2, 2))
-            self.augmentation_transform.transforms.append(random_rotation)
-        if adjust_sharpness:
-            random_sharpness = RandomAdjustSharpness(sharpness_factor=2, p=0.5)
-            self.augmentation_transform.transforms.append(random_sharpness)
-        if auto_contrast:
-            random_contrast = RandomAutocontrast(p=0.5)
-            self.augmentation_transform.transforms.append(random_contrast)
-        if color_jitter:
-            random_color_jitter = transforms.ColorJitter(brightness=(0.5, 1.5),
-                                                         contrast=1,
-                                                         saturation=(0.5, 1.5),
-                                                         hue=(-0.1, 0.1))
-            self.augmentation_transform.transforms.append(random_color_jitter)"""
-
+    def __build_transforms(self):
         normalize = transforms.Normalize(mean=self.mean, std=self.std)
         self.transform = transforms.Compose([transforms.ToTensor(), normalize])
+
+    def __build_aug_transforms(self) -> None:
+        self.possible_transforms: List[transforms.Compose] = [transforms.Compose([])]
+
+        if self.rot_90:
+            trans = transforms.Compose([transforms.RandomRotation(degrees=[90, 90])])
+            self.possible_transforms.append(trans)
+        if self.rot_180:
+            trans = transforms.Compose([transforms.RandomRotation(degrees=[180, 180])])
+            self.possible_transforms.append(trans)
+        if self.rot_270:
+            trans = transforms.Compose([transforms.RandomRotation(degrees=[270, 270])])
+            self.possible_transforms.append(trans)
+        if self.h_flip:
+            trans = transforms.Compose([transforms.RandomHorizontalFlip(p=1)])
+            self.possible_transforms.append(trans)
+        if self.h_flip_rot_90:
+            trans = transforms.Compose([transforms.RandomHorizontalFlip(p=1),
+                                        transforms.RandomRotation(degrees=[90, 90])])
+            self.possible_transforms.append(trans)
+        if self.h_flip_rot_180:
+            trans = transforms.Compose([transforms.RandomHorizontalFlip(p=1),
+                                        transforms.RandomRotation(degrees=[180, 180])])
+            self.possible_transforms.append(trans)
+        if self.h_flip_rot_270:
+            trans = transforms.Compose([transforms.RandomHorizontalFlip(p=1),
+                                        transforms.RandomRotation(degrees=[270, 270])])
+            self.possible_transforms.append(trans)
+
+    def __augment_img(self, img: Image) -> Image:
+        aug_value: int = int(random.uniform(0, len(self.possible_transforms)))
+        augmented = self.possible_transforms[aug_value](img)
+
+        return augmented
 
     # endregion

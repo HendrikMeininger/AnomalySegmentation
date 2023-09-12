@@ -6,6 +6,11 @@ from skimage.transform import resize
 from source.datasets.imagenet import ILSVRC
 from source.utils import visualization
 
+"""
+    Implementation based on https://github.com/YoungGod/DFC/tree/main
+    Paper: https://www.sciencedirect.com/science/article/abs/pii/S0031320322003557
+"""
+
 
 class AnomalyCreator(object):
 
@@ -87,7 +92,7 @@ class AnomalyCreator(object):
             alpha = alpha_min + np.random.rand() * alpha_range
             img_to_inpaint = cv2.addWeighted(img_abnormal, alpha, img_to_inpaint, 1 - alpha, 0)
             img_abnormal = img_to_inpaint * rescaled_mask[:, :, np.newaxis] + img_abnormal * (
-                        1 - rescaled_mask[:, :, np.newaxis])
+                    1 - rescaled_mask[:, :, np.newaxis])
 
         # noise fill
         if oe_mode == 3:
@@ -98,7 +103,7 @@ class AnomalyCreator(object):
             alpha = alpha_min + np.random.rand() * alpha_range
             img_to_inpaint = cv2.addWeighted(img_abnormal, alpha, img_to_inpaint, 1 - alpha, 0)
             img_abnormal = img_to_inpaint * rescaled_mask[:, :, np.newaxis] + img_abnormal * (
-                        1 - rescaled_mask[:, :, np.newaxis])
+                    1 - rescaled_mask[:, :, np.newaxis])
 
         # a-blending
         if oe_mode == 4:
@@ -109,7 +114,7 @@ class AnomalyCreator(object):
             alpha = alpha_min + np.random.rand() * alpha_range
             img_to_blend = cv2.addWeighted(img_abnormal, alpha, img_to_blend, 1 - alpha, 0)
             img_abnormal = img_to_blend * rescaled_mask[:, :, np.newaxis] + img_abnormal * (
-                        1 - rescaled_mask[:, :, np.newaxis])
+                    1 - rescaled_mask[:, :, np.newaxis])
 
         mask_normal = np.zeros((self.mask_size, self.mask_size), dtype=np.float32)
         mask_abnormal = original_mask.astype(np.float32)
@@ -155,7 +160,7 @@ class AnomalyCreator(object):
             max_vertex = np.random.randint(self.max_vertex_lowervalue, self.max_vertex_uppervalue)
 
             temp_mask = self.__np_free_form_mask(max_vertex, self.max_length, max_brush_width, max_angle=180,
-                                               h=self.mask_size, w=self.mask_size)
+                                                 h=self.mask_size, w=self.mask_size)
             mask = np.logical_or(mask, temp_mask)
         return mask
 

@@ -3,6 +3,12 @@ import cv2
 import numpy as np
 
 
+"""
+    Implementation based on https://github.com/BadSeedX/SSAPS
+    Paper: https://openaccess.thecvf.com/content/ACCV2022/html/Long_Self-Supervised_Augmented_Patches_Segmentation_for_Anomaly_Detection_ACCV_2022_paper.html
+"""
+
+
 class PatchAnomalyCreator(object):
 
     def __call__(self, img):
