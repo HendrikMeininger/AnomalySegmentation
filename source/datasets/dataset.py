@@ -54,11 +54,46 @@ class Dataset(object):
 
         return train_loader
 
+    def get_train_and_val_dataloader(self, batch_size: int, train_split: float) -> Tuple[DataLoader, DataLoader]:
+        image_paths = self.__get_train_img_paths()
+
+        train_image_paths, val_image_paths = self.__split_image_paths(image_paths, train_split)
+
+        train_data = TrainDataset(image_paths=train_image_paths, imagenet_dir=self.imagenet_dir, img_size=self.img_size,
+                                  mask_size=self.mask_size, rot_90=self.rot_90, rot_180=self.rot_180,
+                                  rot_270=self.rot_270, h_flip=self.h_flip, h_flip_rot_90=self.h_flip_rot_90,
+                                  h_flip_rot_180=self.h_flip_rot_180, h_flip_rot_270=self.h_flip_rot_270,
+                                  self_supervised_training=self.self_supervised_training, mean=self.mean,
+                                  std=self.std, dfc_anomaly_size=self.dfc_anomaly_size,
+                                  method=self.anomaly_creation_method, cutpaste_mode=self.cutpaste_mode)
+        train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+
+        val_data = TrainDataset(image_paths=val_image_paths, imagenet_dir=self.imagenet_dir, img_size=self.img_size,
+                                mask_size=self.mask_size, rot_90=False, rot_180=False,
+                                rot_270=False, h_flip=False, h_flip_rot_90=False,
+                                h_flip_rot_180=False, h_flip_rot_270=False,
+                                self_supervised_training=self.self_supervised_training, mean=self.mean,
+                                std=self.std, dfc_anomaly_size=self.dfc_anomaly_size,
+                                method=self.anomaly_creation_method, cutpaste_mode=self.cutpaste_mode)
+        val_loader = DataLoader(dataset=val_data, batch_size=1, shuffle=False)
+
+        return train_loader, val_loader
+
     def get_medium_patches_train_dataloader(self, batch_size: int) -> DataLoader:
-        return self.__get_patches_dataloader(batch_size=batch_size, img_size=self.img_size * 2)
+        return self.__get_patches_train_dataloader(batch_size=batch_size, img_size=self.img_size * 2)
+
+    def get_medium_patches_train_and_val_dataloader(self, batch_size: int, train_split: float) \
+            -> Tuple[DataLoader, DataLoader]:
+        return self.__get_patches_train_and_val_dataloader(batch_size=batch_size, img_size=self.img_size * 2,
+                                                           train_split=train_split)
 
     def get_small_patches_train_dataloader(self, batch_size: int) -> DataLoader:
-        return self.__get_patches_dataloader(batch_size=batch_size, img_size=self.img_size * 4)
+        return self.__get_patches_train_dataloader(batch_size=batch_size, img_size=self.img_size * 4)
+
+    def get_small_patches_train_and_val_dataloader(self, batch_size: int, train_split: float) \
+            -> Tuple[DataLoader, DataLoader]:
+        return self.__get_patches_train_and_val_dataloader(batch_size=batch_size, img_size=self.img_size * 4,
+                                                           train_split=train_split)
 
     def get_test_dataloader(self) -> DataLoader:
         test_dataset = TestDataset(path_to_dataset=self.path_to_dataset, mask_size=self.mask_size,
@@ -71,7 +106,7 @@ class Dataset(object):
 
     # region private methods
 
-    def __get_patches_dataloader(self, batch_size: int, img_size: int):
+    def __get_patches_train_dataloader(self, batch_size: int, img_size: int) -> DataLoader:
         image_paths = self.__get_train_img_paths()
         patch_train_data = PatchTrainDataset(image_paths=image_paths, imagenet_dir=self.imagenet_dir,
                                              patch_size=self.img_size, img_size=img_size,
@@ -85,6 +120,34 @@ class Dataset(object):
 
         return train_loader
 
+    def __get_patches_train_and_val_dataloader(self, batch_size: int, img_size: int, train_split: float) \
+            -> Tuple[DataLoader, DataLoader]:
+        image_paths = self.__get_train_img_paths()
+
+        train_image_paths, val_image_paths = self.__split_image_paths(image_paths, train_split)
+
+        patch_train_data = PatchTrainDataset(image_paths=train_image_paths, imagenet_dir=self.imagenet_dir,
+                                             patch_size=self.img_size, img_size=img_size,
+                                             mask_size=self.mask_size, rot_90=self.rot_90, rot_180=self.rot_180,
+                                             rot_270=self.rot_270, h_flip=self.h_flip, h_flip_rot_90=self.h_flip_rot_90,
+                                             h_flip_rot_180=self.h_flip_rot_180, h_flip_rot_270=self.h_flip_rot_270,
+                                             self_supervised_training=self.self_supervised_training,
+                                             mean=self.mean, std=self.std, dfc_anomaly_size=self.dfc_anomaly_size,
+                                             method=self.anomaly_creation_method, cutpaste_mode=self.cutpaste_mode)
+        train_loader = DataLoader(dataset=patch_train_data, batch_size=batch_size, shuffle=True)
+
+        patch_val_data = PatchTrainDataset(image_paths=val_image_paths, imagenet_dir=self.imagenet_dir,
+                                           patch_size=self.img_size, img_size=img_size,
+                                           mask_size=self.mask_size, rot_90=False, rot_180=False,
+                                           rot_270=False, h_flip=False, h_flip_rot_90=False,
+                                           h_flip_rot_180=False, h_flip_rot_270=False,
+                                           self_supervised_training=self.self_supervised_training,
+                                           mean=self.mean, std=self.std, dfc_anomaly_size=self.dfc_anomaly_size,
+                                           method=self.anomaly_creation_method, cutpaste_mode=self.cutpaste_mode)
+        val_loader = DataLoader(dataset=patch_val_data, batch_size=1, shuffle=False)
+
+        return train_loader, val_loader
+
     def __get_train_img_paths(self) -> List[str]:
         train_data_path = os.path.join(self.path_to_dataset, 'train/good')
         image_paths = []
@@ -94,5 +157,15 @@ class Dataset(object):
                 image_paths.append(os.path.join(root, file))
 
         return image_paths
+
+    def __split_image_paths(self, image_paths: List[str], train_split: float = 0.9) \
+            -> Tuple[List[str], List[str]]:
+        n = len(image_paths)
+        n_train = int(n * train_split)
+
+        train_image_paths = image_paths[:n_train]
+        val_image_paths = image_paths[n_train:]
+
+        return train_image_paths, val_image_paths
 
     # endregion

@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from source.datasets.dataset import Dataset
 from source.datasets.patch_train_dataset import PatchTrainDataset
 from source.datasets.train_dataset import TrainDataset
 from source.models.PaDiM.backbone.padim import PaDiM
@@ -14,12 +15,13 @@ class Trainer(object):
 
     # region init
 
-    def __init__(self, output_dir, dataset, num_embeddings=130, backbone="resnet18",
-                 image_size: int = 512, debugging: bool = False):
+    def __init__(self, output_dir: str, dataset: Dataset, batch_size: int = 32, num_embeddings=130,
+                 backbone="resnet18", image_size: int = 512, debugging: bool = False):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.output_dir = output_dir
         self.dataset = dataset
+        self.batch_size = batch_size
         self.image_size = image_size
         self.num_embeddings = num_embeddings
         self.backbone = backbone
@@ -63,7 +65,7 @@ class Trainer(object):
     # region private methods
 
     def __train_big_model(self) -> None:
-        train_loader = self.dataset.get_train_dataloader()
+        train_loader = self.dataset.get_train_dataloader(self.batch_size)
         self.padim_big.train(train_loader, epochs=3)
 
         N, means, covs, embedding_ids = self.padim_big.get_residuals()
@@ -71,7 +73,7 @@ class Trainer(object):
         self.__save_model(N, means, covs, embedding_ids, dir_name="big")
 
     def __train_medium_model(self) -> None:
-        patch_train_loader = self.dataset.get_train_dataloader()
+        patch_train_loader = self.dataset.get_medium_patches_train_dataloader(self.batch_size)
         self.padim_medium.train(patch_train_loader, epochs=3, use_patches=True)
 
         N, means, covs, embedding_ids = self.padim_medium.get_residuals()
@@ -79,7 +81,7 @@ class Trainer(object):
         self.__save_model(N, means, covs, embedding_ids, dir_name="medium")
 
     def __train_small_model(self) -> None:
-        patch_train_loader = self.dataset.get_train_dataloader()
+        patch_train_loader = self.dataset.get_small_patches_train_dataloader(self.batch_size)
         self.padim_small.train(patch_train_loader, epochs=3, use_patches=True)
 
         N, means, covs, embedding_ids = self.padim_small.get_residuals()

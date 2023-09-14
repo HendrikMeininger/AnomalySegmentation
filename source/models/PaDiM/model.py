@@ -13,7 +13,7 @@ from source.utils import visualization
 
 """
     Implementation of PaDiM: a Patch Distribution Modeling Framework for Anomaly Detection and Localization
-    Code modified from https://github.com/Pangoraw/PaDiM
+    Base implementation: https://github.com/Pangoraw/PaDiM
     Paper: https://arxiv.org/abs/2011.08785
 """
 
@@ -24,6 +24,7 @@ class PaDiM(object):
 
     def __init__(self, model_path: str = None):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.use_patches = None
 
         if model_path is None:
             self.trained = False
@@ -46,11 +47,14 @@ class PaDiM(object):
 
     # region public methods
 
-    def train(self, dataset, output_dir: str, debugging: bool = False, num_embeddings=130, backbone="resnet18",
-              image_size: int = 512) -> None:
+    def train(self, dataset, output_dir: str, use_patches: bool = False, debugging: bool = False,
+              num_embeddings=130, backbone="resnet18", image_size: int = 512, batch_size: int = 30) -> None:
+        self.use_patches = use_patches
+
         if self.use_patches:
             trainer = PatchTrainer(output_dir=output_dir,
                                    dataset=dataset,
+                                   batch_size=batch_size,
                                    num_embeddings=num_embeddings,
                                    backbone=backbone,
                                    image_size=image_size,
@@ -58,6 +62,7 @@ class PaDiM(object):
         else:
             trainer = Trainer(output_dir=output_dir,
                               dataset=dataset,
+                              batch_size=batch_size,
                               num_embeddings=num_embeddings,
                               backbone=backbone,
                               image_size=image_size,

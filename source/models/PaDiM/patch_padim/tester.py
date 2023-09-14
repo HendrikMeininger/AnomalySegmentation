@@ -1,22 +1,15 @@
 import math
-import gc
 import numpy as np
-import torch
 import torchvision
 import torchvision.transforms.functional as TF
 import torch.nn.functional as F
 from os.path import join
-from typing import Tuple, List, Dict
-
+from typing import List
 from PIL import Image
-from torch.utils.data import DataLoader
 from torchvision.transforms import transforms, Resize
 
-import source.evaluation.eval as evaluation
-from source.datasets.dataset import Dataset
-from source.utils import visualization
 from source.models.PaDiM.backbone.padim import PaDiM
-from source.models.PaDiM.base_padim.tester import Tester as BaseTester
+from source.models.utils import BaseTester
 
 
 class Tester(BaseTester):
@@ -24,19 +17,21 @@ class Tester(BaseTester):
     # region init
 
     def __init__(self, model_path: str, debugging: bool = False,
-                 image_size: int = 256, mask_size: int = 1024, patch_size: int = 1024,
+                 image_size: int = 1024, mask_size: int = 1024, patch_size: int = 256,
                  use_self_ensembling: bool = False,
                  rot_90: bool = False, rot_180: bool = False, rot_270: bool = False, h_flip: bool = False,
                  h_flip_rot_90: bool = False, h_flip_rot_180: bool = False, h_flip_rot_270: bool = False,
                  integration_limit: float = 0.3, backbone: str = "resnet18"):
         self.patch_size = patch_size
-        self.resize_transform = Resize(size=image_size, interpolation=TF.InterpolationMode.BILINEAR)
+        self.resize_transform = Resize(size=patch_size, interpolation=TF.InterpolationMode.BILINEAR)
 
-        super().__init__(model_path=model_path, debugging=debugging, image_size=image_size,
-                         mask_size=mask_size, use_self_ensembling=use_self_ensembling, rot_90=rot_90,
-                         rot_180=rot_180, rot_270=rot_270, h_flip=h_flip, h_flip_rot_90=h_flip_rot_90,
-                         h_flip_rot_180=h_flip_rot_180, h_flip_rot_270=h_flip_rot_270,
-                         integration_limit=integration_limit, backbone=backbone)
+        super().__init__(model_path=model_path, debugging=debugging, image_size=image_size, mask_size=mask_size,
+                         use_self_ensembling=use_self_ensembling, rot_90=rot_90, rot_180=rot_180, rot_270=rot_270,
+                         h_flip=h_flip, h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                         h_flip_rot_270=h_flip_rot_270, integration_limit=integration_limit)
+        self.backbone = backbone
+
+        self.__load_model()
 
     def __load_model(self):
         self.padim_big = self.__load_patch_model(join(self.model_path, "big"))
@@ -59,9 +54,9 @@ class Tester(BaseTester):
 
     # endregion
 
-    # region private methods
+    # region implement abstract methods
 
-    def __score(self, img_input) -> np.array:
+    def score(self, img_input) -> np.array:
         big_patches_score = self.__score_big_patches(img_input)
         medium_patches_score = self.__score_medium_patches(img_input)
         small_patches_score = self.__score_small_patches(img_input)
@@ -69,6 +64,29 @@ class Tester(BaseTester):
         final_score = self.__calc_final_score(big_patches_score, medium_patches_score, small_patches_score)
 
         return final_score
+
+    def score_with_augmentation(self, img_input) -> np.array:
+        score_list = self.__get_self_ensembling_scores(img_input)
+        final_score = self.__combine_scores(score_list)
+
+        return final_score
+
+    def preprocess_img(self, image_path: str, mean: List[float], std: List[float]):
+        original = Image.open(image_path).convert('RGB')
+
+        normalize = transforms.Normalize(mean=mean, std=std)
+        resize = torchvision.transforms.Resize(size=self.patch_size, interpolation=TF.InterpolationMode.BILINEAR)
+
+        transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
+        preprocessed = transform(original)
+
+        preprocessed = preprocessed[None, :]
+
+        return preprocessed
+
+    # endregion
+
+    # region private methods
 
     def __calc_final_score(self, big, medium, small) -> np.array:
         # score = np.max(big, np.max(medium, small))
@@ -122,24 +140,5 @@ class Tester(BaseTester):
         raw_score = raw_score.detach().cpu().numpy().squeeze()
 
         return raw_score
-
-    def __score_with_augmentation(self, img_input) -> np.array:
-        score_list = self.__get_self_ensembling_scores(img_input)
-        final_score = self.__combine_scores(score_list)
-
-        return final_score
-
-    def __preprocess_img(self, image_path: str, mean: List[float], std: List[float]):
-        original = Image.open(image_path).convert('RGB')
-
-        normalize = transforms.Normalize(mean=mean, std=std)
-        resize = torchvision.transforms.Resize(size=self.patch_size, interpolation=TF.InterpolationMode.BILINEAR)
-
-        self.transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
-        preprocessed = self.transform(original)
-
-        preprocessed = preprocessed[None, :]
-
-        return preprocessed
 
     # end region

@@ -1,20 +1,15 @@
-import numpy as np
 import torch
 import os
 import pandas as pd
 import torch.nn as nn
 from torch.optim import Adam
-from torch.utils.data import DataLoader
 from contextlib import contextmanager
-
 from torchvision.transforms import Resize, InterpolationMode
+from typing_extensions import Literal
 
-from source.datasets.patch_train_dataset import PatchTrainDataset
-from source.datasets.train_dataset import TrainDataset
-from source.models.DFC.tester import Tester
-from source.models.DFC_backbone.vgg19 import VGG19
-from source.models.DFC_backbone.vgg19_s import VGG19_S
-from source.utils.performance_measurement import Timer
+from source.datasets.dataset import Dataset
+from source.models.DFC.backbone.vgg19 import VGG19
+from source.models.DFC.backbone.vgg19_s import VGG19_S
 
 
 @contextmanager
@@ -26,27 +21,31 @@ class Trainer(object):
 
     # region init
 
-    def __init__(self, output_dir, image_paths, dataset_type,
-                 dataset_dir,
-                 batch_size=8, n_epochs=201, lr=2e-4,
-                 pretrained_weights_dir=None, imagenet_dir=None):
+    _DATASET_TYPES = Literal["textures", "objects"]
+    _CNN_LAYERS_TEXTURES = ("relu4_1", "relu4_2", "relu4_3", "relu4_4")
+    _CNN_LAYERS_OBJECTS = ("relu4_3", "relu4_4", "relu5_1", "relu5_2")
+
+    def __init__(self, output_dir: str, dataset: Dataset, dataset_type: _DATASET_TYPES, batch_size: int = 8,
+                 n_epochs: int = 201, lr: float = 2e-4, train_split: float = 0.95,
+                 pretrained_weights_dir: str = None, imagenet_dir: str = None, early_stopping: bool = True,
+                 patience: int = 10, debugging: bool = True):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.output_dir = output_dir
-        self.image_paths = image_paths
+        self.dataset = dataset
         self.dataset_type = dataset_type
-        self.dataset_dir = dataset_dir
         self.batch_size = batch_size
         self.epochs = n_epochs
         self.learning_rate = lr
+        self.train_split = train_split
         self.pretrained_weights_dir = pretrained_weights_dir
         self.imagenet_dir = imagenet_dir
+        self.early_stopping = early_stopping
+        self.patience = patience
+        self.debugging = debugging
 
-        self.patience = 10
         self.epochs_without_improvement = 0
         self.best_val_loss = float("inf")
-
-        self.__split_image_paths(image_paths)
 
         self.__build_models()
         self.loss = nn.MSELoss(reduction='mean')
@@ -55,15 +54,14 @@ class Trainer(object):
         self.val_loss_df = pd.DataFrame({'epoch': [], 'loss': [], 'loss_normal': [], 'loss_abnormal': []})
         self.eval_df = pd.DataFrame({'epoch': [], 'roc': [], 'pro': [], 'iou': []})
 
-        print("Training Patch DFC model")
-        print("Using device: ", self.device)
-        print("Saving model in ", self.output_dir)
+        self.__log_message("Training Patch DFC model")
+        self.__log_message(f"Using device: {self.device}")
+        self.__log_message(f"Saving model in {self.output_dir}")
 
         self.__init_feat_layers()
 
-        print("Using ", len(self.image_paths), " images for training")
-        print("Batch size: ", self.batch_size)
-        print("Epochs: ", self.epochs)
+        self.__log_message(f"Batch size: {self.batch_size}")
+        self.__log_message(f"Epochs: {self.epochs}")
 
     def __build_models(self):
         self.feature_extraction = self.__build_feature_extractor()
@@ -87,22 +85,14 @@ class Trainer(object):
         return res
 
     def __init_feat_layers(self):
-        cnn_layers_textures = ("relu4_1", "relu4_2", "relu4_3", "relu4_4")
-        cnn_layers_objects = ("relu4_3", "relu4_4", "relu5_1", "relu5_2")
-
         if self.dataset_type == "objects":
-            self.feat_layers = cnn_layers_objects
-            print("Using object layers.")
+            self.feat_layers = self._CNN_LAYERS_OBJECTS
+            self.__log_message("Using object layers.")
         elif self.dataset_type == "textures":
-            self.feat_layers = cnn_layers_textures
-            print("Using texture layers.")
-
-    def __split_image_paths(self, image_paths):
-        n = len(image_paths)
-        n_train = int(n * 0.95)
-
-        self.train_image_paths = image_paths[:n_train]
-        self.val_image_paths = image_paths[n_train:]
+            self.feat_layers = self._CNN_LAYERS_TEXTURES
+            self.__log_message("Using texture layers.")
+        else:
+            raise Exception("Unknown dataset type. Valid types: ['textures', 'objects']")
 
     # endregion
 
@@ -112,15 +102,15 @@ class Trainer(object):
         self.feature_extraction.eval()
 
         if os.path.exists(os.path.join(self.output_dir, 'big', 'final')):
-            print("Big model already exists. Skipped training big model.")
+            self.__log_message("Big model already exists. Skipped training big model.")
         else:
             self.__train_big_patches()
         if os.path.exists(os.path.join(self.output_dir, 'medium', 'final')):
-            print("Medium model already exists. Skipped training medium model.")
+            self.__log_message("Medium model already exists. Skipped training medium model.")
         else:
             self.__train_medium_patches()
         if os.path.exists(os.path.join(self.output_dir, 'small', 'final')):
-            print("Small model already exists. Skipped training small model.")
+            self.__log_message("Small model already exists. Skipped training small model.")
         else:
             self.__train_small_patches()
 
@@ -129,28 +119,15 @@ class Trainer(object):
     # region training
 
     def __train_big_patches(self):
-        Timer.start_timer()
-
         with task("dataset"):
-            train_data = TrainDataset(image_paths=self.train_image_paths, img_size=256,
-                                      mask_size=1024, imagenet_dir=self.imagenet_dir,
-                                      horizontal_flip=True, vertical_flip=True, rotate=True,
-                                      adjust_sharpness=False, auto_contrast=False, color_jitter=False,
-                                      anomaly_size='all', method='dfc')
-            train_loader = DataLoader(dataset=train_data, batch_size=self.batch_size, shuffle=True)
-
-            val_data = TrainDataset(image_paths=self.val_image_paths, img_size=256,
-                                    mask_size=1024, imagenet_dir=self.imagenet_dir,
-                                    horizontal_flip=False, vertical_flip=False, rotate=False,
-                                    adjust_sharpness=False, auto_contrast=False, color_jitter=False,
-                                    anomaly_size='all', method='all')
-            val_loader = DataLoader(dataset=val_data, batch_size=1, shuffle=False)
+            train_loader, val_loader = self.dataset.get_train_and_val_dataloader(self.batch_size, self.train_split)
+            self.__log_message(f"Using {len(train_loader.dataset)} images for training")
 
         with task("train"):
             self.feature_extraction.eval()
             self.feature_matching_big.train()
 
-            print("Start training with big patches...")
+            self.__log_message("Start training with big patches...")
             loss_avg = 0.
             loss_normal_avg = 0.
             loss_abnormal_avg = 0.
@@ -200,18 +177,16 @@ class Trainer(object):
                     best_loss = loss_avg
                     self.__save_model("big/best", self.feature_matching_big)
                 if epoch % 1 == 0:
-                    print(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
-                          f"loss_abnormal = {loss_abnormal_avg:.5f}")
+                    self.__log_message(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
+                                       f"loss_abnormal = {loss_abnormal_avg:.5f}")
                     self.loss_df.loc[len(self.loss_df)] = [epoch, loss_avg, loss_normal_avg, loss_abnormal_avg]
                     val_loss = self.__calc_validation_loss(val_loader, epoch, self.feature_matching_big)
-                if epoch % 10 == 0:
+                if epoch % 10 == 0 and epoch != 0:
                     self.__save_model("big/epoch_{}".format(epoch), self.feature_matching_big)
                     self.loss_df.to_csv(loss_save_path, index=False)
                     self.val_loss_df.to_csv(val_loss_save_path, index=False)
-
-                    self.eval_df.to_csv(eval_save_path, index=False)
                 if epoch > 100:
-                    if self.__stop_early(val_loss):
+                    if self.early_stopping and self.__stop_early(val_loss):
                         break
                 if epoch == 100:
                     self.__set_new_lr(self.optimizer_big)
@@ -225,35 +200,21 @@ class Trainer(object):
         self.val_loss_df.to_csv(val_loss_save_path, index=False)
         self.eval_df.to_csv(eval_save_path, index=False)
 
-        Timer.log_time("Trained Matching Net for big patches")
-        print("Matching Net for big patches Trained.")
+        self.__log_message("Matching Net for big patches Trained.")
 
         self.best_val_loss = float("inf")
         self.epochs_without_improvement = 0
 
-        Timer.print_task_times()
-
     def __train_medium_patches(self):
-        Timer.start_timer()
-
         with task("dataset"):
-            patch_train_data = PatchTrainDataset(image_paths=self.train_image_paths, patch_size=256, image_size=512,
-                                                 imagenet_dir=self.imagenet_dir,
-                                                 horizontal_flip=True, vertical_flip=True, rotate=True,
-                                                 adjust_sharpness=False, auto_contrast=False, color_jitter=False)
-            train_loader = DataLoader(dataset=patch_train_data, batch_size=self.batch_size, shuffle=True)
-
-            patch_val_data = PatchTrainDataset(image_paths=self.train_image_paths, patch_size=256, image_size=512,
-                                               imagenet_dir=self.imagenet_dir,
-                                               horizontal_flip=False, vertical_flip=False, rotate=False,
-                                               adjust_sharpness=False, auto_contrast=False, color_jitter=False)
-            val_loader = DataLoader(dataset=patch_val_data, batch_size=1, shuffle=False)
+            train_loader, val_loader = self.dataset.get_medium_patches_train_and_val_dataloader(self.batch_size,
+                                                                                                self.train_split)
 
         with task("train"):
             self.feature_extraction.eval()
             self.feature_matching_medium.train()
 
-            print("Started training medium patches...")
+            self.__log_message("Started training medium patches...")
             loss_avg = 0.
             loss_normal_avg = 0.
             loss_abnormal_avg = 0.
@@ -304,16 +265,16 @@ class Trainer(object):
                     best_loss = loss_avg
                     self.__save_model("medium/best", self.feature_matching_medium)
                 if epoch % 1 == 0:
-                    print(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
-                          f"loss_abnormal = {loss_abnormal_avg:.5f}")
+                    self.__log_message(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
+                                       f"loss_abnormal = {loss_abnormal_avg:.5f}")
                     self.loss_df.loc[len(self.loss_df)] = [epoch, loss_avg, loss_normal_avg, loss_abnormal_avg]
                     val_loss = self.__calc_patches_validation_loss(val_loader, epoch, self.feature_matching_medium)
-                if epoch % 10 == 0:
+                if epoch % 10 == 0 and epoch != 0:
                     self.__save_model("medium/epoch_{}".format(epoch), self.feature_matching_medium)
                     self.loss_df.to_csv(loss_save_path, index=False)
                     self.val_loss_df.to_csv(val_loss_save_path, index=False)
                 if epoch > 100:
-                    if self.__stop_early(val_loss):
+                    if self.early_stopping and self.__stop_early(val_loss):
                         break
                 if epoch == 100:
                     self.__set_new_lr(self.optimizer_medium)
@@ -326,37 +287,21 @@ class Trainer(object):
         self.loss_df.to_csv(loss_save_path, index=False)
         self.val_loss_df.to_csv(val_loss_save_path, index=False)
 
-        Timer.log_time("Trained Matching Net for medium patches")
-        print("Matching Net for medium patches Trained.")
+        self.__log_message("Matching Net for medium patches Trained.")
 
         self.best_val_loss = float("inf")
         self.epochs_without_improvement = 0
 
-        Timer.print_task_times()
-
     def __train_small_patches(self):
-        Timer.start_timer()
-
         with task("dataset"):
-            patch_train_data = PatchTrainDataset(image_paths=self.train_image_paths, patch_size=256, image_size=1024,
-                                                 imagenet_dir=self.imagenet_dir,
-                                                 horizontal_flip=True, vertical_flip=True, rotate=True,
-                                                 adjust_sharpness=False, auto_contrast=False, color_jitter=False)
-            train_loader = DataLoader(dataset=patch_train_data, batch_size=self.batch_size, shuffle=True)
-
-            patch_val_data = PatchTrainDataset(image_paths=self.train_image_paths, patch_size=256, image_size=1024,
-                                               imagenet_dir=self.imagenet_dir,
-                                               horizontal_flip=False, vertical_flip=False, rotate=False,
-                                               adjust_sharpness=False, auto_contrast=False)
-            val_loader = DataLoader(dataset=patch_val_data, batch_size=1, shuffle=False)
+            train_loader, val_loader = self.dataset.get_small_patches_train_and_val_dataloader(self.batch_size,
+                                                                                               self.train_split)
 
         with task("train"):
-            Timer.start_timer()
-
             self.feature_extraction.eval()
             self.feature_matching_small.train()
 
-            print("Started training small patches...")
+            self.__log_message("Started training small patches...")
             loss_avg = 0.
             loss_normal_avg = 0.
             loss_abnormal_avg = 0.
@@ -366,7 +311,7 @@ class Trainer(object):
 
             best_loss = float("inf")
 
-            for epoch in range(41, self.epochs):
+            for epoch in range(self.epochs):
                 self.feature_matching_small.train()
 
                 for normals, abnormals, normal_masks, abnormal_masks in train_loader:  # for all train images
@@ -403,23 +348,20 @@ class Trainer(object):
                         loss_abnormal = alpha * loss_abnormal
                         loss_abnormal_avg = loss_abnormal_avg * 0.9 + float(loss_abnormal.item()) * 0.1
 
-                Timer.log_time(f"Finished epoch {epoch}")
-                Timer.print_task_times()
-
                 if loss_avg < best_loss:
                     best_loss = loss_avg
                     self.__save_model("small/best", self.feature_matching_small)
                 if epoch % 1 == 0:
-                    print(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
-                          f"loss_abnormal = {loss_abnormal_avg:.5f}")
+                    self.__log_message(f"Epoch {epoch}, loss = {loss_avg:.5f}, loss_normal = {loss_normal_avg:.5f}, "
+                                       f"loss_abnormal = {loss_abnormal_avg:.5f}")
                     self.loss_df.loc[len(self.loss_df)] = [epoch, loss_avg, loss_normal_avg, loss_abnormal_avg]
                     val_loss = self.__calc_patches_validation_loss(val_loader, epoch, self.feature_matching_small)
-                if epoch % 10 == 0:
+                if epoch % 10 == 0 and epoch != 0:
                     self.__save_model("small/epoch_{}".format(epoch), self.feature_matching_small)
                     self.loss_df.to_csv(loss_save_path, index=False)
                     self.val_loss_df.to_csv(val_loss_save_path, index=False)
                 if epoch > 100:
-                    if self.__stop_early(val_loss):
+                    if self.early_stopping and self.__stop_early(val_loss):
                         break
                 if epoch == 100:
                     self.__set_new_lr(self.optimizer_small)
@@ -432,13 +374,10 @@ class Trainer(object):
         self.loss_df.to_csv(loss_save_path, index=False)
         self.val_loss_df.to_csv(val_loss_save_path, index=False)
 
-        Timer.log_time("Trained Matching Net for small patches")
-        print("Matching Net for small patches Trained.")
+        self.__log_message("Matching Net for small patches Trained.")
 
         self.best_val_loss = float("inf")
         self.epochs_without_improvement = 0
-
-        Timer.print_task_times()
 
     # endregion
 
@@ -544,5 +483,9 @@ class Trainer(object):
 
         save_path = os.path.join(save_dir, 'match.pt')
         torch.save(model.state_dict(), save_path)
+
+    def __log_message(self, message):
+        if self.debugging:
+            print(message)
 
     # endregion

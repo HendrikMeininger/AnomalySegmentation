@@ -1,38 +1,27 @@
-from source.datasets import train_dataset
+from source.datasets.dataset import Dataset
 from source.models.PaDiM.base_padim.trainer import Trainer
+from source.models.PaDiM.model import PaDiM
+from source.utils.performance_measurement import Timer
 
 
 def main():
-    """Timer.start_timer()
+    Timer.start_timer()
 
     data = 'carpet'
-    path_to_dataset = f"E:/datasets/mvtec_anomaly_detection/{data}"
-    image_paths = train_dataset.get_train_img_paths(path_to_dataset)
-    trainer = Trainer(output_dir=f"E:/models/PaDiM/PaDiM_{data}_none_256_200_wide50",
-                      image_paths=image_paths,
-                      batch_size=30,
-                      dataset_dir=path_to_dataset,
-                      num_embeddings=200,
-                      image_size=256,
-                      DFC_backbone='wide_resnet50')
-    trainer.train()
+    path_to_dataset = f"D:/datasets/mvtec_anomaly_detection/{data}"
+    output_dir = 'C:/Vision4Quality/testmodel'
 
-    Timer.log_time("Finished Training")
-    Timer.print_task_times()"""
-    train_model_with_dataset("wooden_plates")
+    train_model_with_dataset(output_dir=output_dir, path_to_dataset=path_to_dataset)
+
+    Timer.log_time("Finished training")
+    Timer.print_task_times()
 
 
-def train_model_with_dataset(data):
-    path_to_dataset = f"E:/datasets/mvtec_anomaly_detection/{data}"
-    image_paths = train_dataset.get_train_img_paths(path_to_dataset)
-    trainer = Trainer(output_dir=f"E:/models/PaDiM/PaDiM_{data}_none_256_200_wide50",
-                      image_paths=image_paths,
-                      batch_size=30,
-                      dataset_dir=path_to_dataset,
-                      num_embeddings=200,
-                      image_size=256,
-                      backbone='wide_resnet50')
-    trainer.train()
+def train_model_with_dataset(output_dir: str, path_to_dataset: str):
+    dataset: Dataset = Dataset(path_to_dataset=path_to_dataset, img_size=512)
+
+    model: PaDiM = PaDiM()
+    model.train(dataset=dataset, output_dir=output_dir, debugging=True, use_patches=True)
 
 
 if __name__ == "__main__":

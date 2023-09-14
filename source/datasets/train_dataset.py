@@ -46,6 +46,7 @@ class TrainDataset(Dataset):
             self.images.append(img)
 
         self.__build_transforms()
+        self.__build_aug_transforms()
 
         if self.self_supervised_training:
             self.anomaly_creator = AnomalyCreator(img_size=img_size, mask_size=mask_size, mean=self.mean, std=self.std,

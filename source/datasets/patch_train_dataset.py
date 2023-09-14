@@ -42,13 +42,16 @@ class PatchTrainDataset(Dataset):
 
         self.self_supervised_training = self_supervised_training
 
+        self.__build_transforms()
+        self.__build_aug_transforms()
+
         for image_path in image_paths:
             img = Image.open(image_path).convert('RGB')
             img = img.resize((self.img_size, self.img_size))
             self.images.append(img)
 
         if self.self_supervised_training:
-            self.anomaly_creator = AnomalyCreator(img_size=img_size, mask_size=mask_size, mean=self.mean, std=self.std,
+            self.anomaly_creator = AnomalyCreator(img_size=patch_size, mask_size=mask_size, mean=self.mean, std=self.std,
                                                   imagenet_dir=imagenet_dir, method=method,
                                                   dfc_anomaly_size=dfc_anomaly_size, cutpaste_mode=cutpaste_mode)
 
@@ -94,7 +97,7 @@ class PatchTrainDataset(Dataset):
 
     # region private methods
 
-    def __build_transforms(self):
+    def __build_transforms(self) -> None:
         normalize = transforms.Normalize(mean=self.mean, std=self.std)
         self.transform = transforms.Compose([transforms.ToTensor(), normalize])
 

@@ -27,8 +27,6 @@ class AnomalyCreator(object):
         self.anomaly_size = dfc_anomaly_size
         self.method = method
 
-        self.creator = DFCAnomalyCreator(img_size, mask_size, mean, std, imagenet_dir, 'all')
-
         if method == 'dfc':
             self.creator = DFCAnomalyCreator(img_size, mask_size, mean, std, imagenet_dir, dfc_anomaly_size)
         elif method == 'ssaps':
@@ -36,7 +34,7 @@ class AnomalyCreator(object):
         elif method == 'cutpaste':
             self.creator = CutPaste(mode=cutpaste_mode)
         elif method == 'all':
-            self.cutpaste_creator = CutPaste(mode='all')
+            self.cutpaste_creator = CutPaste(mode=cutpaste_mode)
             self.dfc_creator = DFCAnomalyCreator(img_size, mask_size, mean, std, imagenet_dir, dfc_anomaly_size)
             self.ssaps_creator = PatchAnomalyCreator()
         else:

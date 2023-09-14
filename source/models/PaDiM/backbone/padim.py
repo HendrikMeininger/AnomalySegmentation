@@ -64,11 +64,11 @@ class PaDiM(PaDiMBase):
             covs: Tensor - the computed covariance matrices
         """
         for e in range(epochs):
-            if not use_patches:
-                for imgs, _, _, _ in dataloader:
+            print("Epoch: ", e)
+            for imgs in dataloader:
+                if not use_patches:
                     self.train_one_batch(imgs)
-            else:
-                for imgs in dataloader:
+                else:
                     for patches in imgs:
                         self.train_one_batch(patches)
 
@@ -100,26 +100,6 @@ class PaDiM(PaDiMBase):
             covs[i, :, :] += epsilon * identity  # constant term
 
         return means, covs, self.embedding_ids
-
-    def test(self, dataloader: DataLoader) -> List[NDArray]:
-        """
-        Consumes the given dataloader and outputs the corresponding
-        distance matrices
-        Params
-        ======
-            dataloader: DataLoader - a dataloader of image tensors
-        Returns
-        =======
-            distances: ndarray - the (N * (w * h)) distance matrix
-        """
-        distances = []
-        means, covs, _ = self.get_params()
-        means, covs = means.cpu().numpy(), covs.cpu().numpy()
-        inv_cvars = self._get_inv_cvars(covs)
-        for _, new_imgs, _ in dataloader:
-            new_distances = self.predict(new_imgs, params=(means, inv_cvars))
-            distances.extend(new_distances)
-        return np.array(distances)
 
     def _get_inv_cvars(self, covs: Tensor) -> NDArray:
         inv_cvars = torch.inverse(covs)

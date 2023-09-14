@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from source.models.DFC_backbone.vgg import vgg19
+from source.models.DFC.backbone.vgg import vgg19
 
 """
     Code based on https://github.com/YoungGod/DFC
@@ -8,16 +8,75 @@ from source.models.DFC_backbone.vgg import vgg19
 """
 
 
-class VGG19(torch.nn.Module):
+# Res blocks
+class ResnetBlock(nn.Module):
+    def __init__(self, dim, dilation=2, padding='reflect'):
+        super(ResnetBlock, self).__init__()
+        self.conv_block = nn.Sequential(
+            nn.ReflectionPad2d(dilation) if padding == 'reflect' else nn.ZeroPad2d(dilation),
+            nn.Conv2d(in_channels=dim, out_channels=dim, kernel_size=3, padding=0, dilation=dilation),
+            # models.InstanceNorm2d(dim, track_running_stats=False),
+            nn.ReLU(True),
+
+            nn.ReflectionPad2d(1) if padding == 'reflect' else nn.ZeroPad2d(1),
+            nn.Conv2d(in_channels=dim, out_channels=dim, kernel_size=3, padding=0, dilation=1),
+            # models.InstanceNorm2d(dim, track_running_stats=False),
+        )
+
+    def forward(self, x):
+        out = x + self.conv_block(x)  # ReLU or not?
+        # print(out.size())   ##########################################
+        # Remove ReLU at the end of the residual block
+        # http://torch.ch/blog/2016/02/04/resnets.html
+
+        return out
+
+
+# current Estimator is using 4 residual blocks
+class MCRL(nn.Module):
+    def __init__(self, in_channels=256, residual_blocks=2, dilation=2):
+        super(MCRL, self).__init__()
+
+        # deformable branch (data dependent context)
+        blocks = []
+        for _ in range(residual_blocks):
+            block = ResnetBlock(in_channels, dilation=2, padding='reflect')
+            # block = ResnetBlock_BDCM(in_channels, dilation=dilation)
+            blocks.append(block)
+        self.middle_res1 = nn.Sequential(*blocks)
+
+        # dilated branch (fixed context)
+        blocks = []
+        for _ in range(residual_blocks):
+            block = ResnetBlock(in_channels, dilation=4, padding='reflect')
+            blocks.append(block)
+        self.middle_res2 = nn.Sequential(*blocks)
+
+        # dilated branch (fixed context)
+        blocks = []
+        for _ in range(residual_blocks):
+            block = ResnetBlock(in_channels, dilation=8, padding='reflect')
+            blocks.append(block)
+        self.middle_res3 = nn.Sequential(*blocks)
+
+    def forward(self, x):
+        x1 = self.middle_res1(x)
+        x2 = self.middle_res2(x)
+        x3 = self.middle_res3(x)
+        out = x + x1 + x2 + x3
+        return out
+
+
+class VGG19_S(torch.nn.Module):
     """
     VGG19: [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M']
     level1: 64*2=128; level2: 128*2=256; level3: 256*4=1024; level4: 512*4=2048; level5: 512*4=2048
     Total dimension: 128 + 256 + 1024 + 2048 + 2048 = 5504
     """
 
-    def __init__(self, pretrain=False, gradient=False, pool='avg', pretrained_weights_dir=None):
-        super(VGG19, self).__init__()
-        features = vgg19(pretrained=pretrain, pretrained_weights_dir=pretrained_weights_dir).features  # feature layers
+    def __init__(self, pretrain=False, gradient=False, pool='avg'):
+        super(VGG19_S, self).__init__()
+        features = vgg19(pretrained=pretrain, progress=False).features  # feature layers
         """ vgg.features
         Sequential(
           (0): Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
@@ -77,7 +136,8 @@ class VGG19(torch.nn.Module):
         self.conv2_2 = features[7]
         self.relu2_2 = features[8]
 
-        # hierarchy 3 (level 3)
+        # replace all convs in level 3 with deformable conv v2
+        # hierarchy 3 (level 3)    
         self.pool2 = features[9]
         self.conv3_1 = features[10]
         self.relu3_1 = features[11]
@@ -98,6 +158,22 @@ class VGG19(torch.nn.Module):
         self.relu4_3 = features[24]
         self.conv4_4 = features[25]
         self.relu4_4 = features[26]
+
+        # after pool3
+        self.resnet = MCRL(in_channels=self.conv3_4.in_channels, residual_blocks=4, dilation=2)
+
+        # self.resnet = DilatedDenseResidualBlock(in_channels=self.conv3_4.in_channels, dilated_dense_blocks=2, growthrate=32, num_layer=4, dilation=True)
+        # # init as zero
+        # def weight_init(m):
+        #     """
+        #     ref: https://blog.csdn.net/qq_36338754/article/details/97756378
+        #     """
+        #     if isinstance(m, models.Conv2d) or isinstance(m, models.Linear):
+        #         if m.weight is not None:
+        #             m.weight.data.zero_()
+        #         if m.bias is not None:
+        #             m.bias.data.zero_()
+        # self.resnet.apply(weight_init)    
 
         # hierarchy 5 (level 5)
         self.pool4 = features[27]
@@ -123,7 +199,7 @@ class VGG19(torch.nn.Module):
         # avg pooling
         if pool == 'avg':
             avg_pool = nn.AvgPool2d(kernel_size=2, stride=2)
-            #         self.pool3 = self.pool4 = self.pool5 = avg_pool
+            # self.pool3 = self.pool4 = self.pool5 = avg_pool
             self.pool1 = self.pool2 = self.pool3 = self.pool4 = self.pool5 = avg_pool
 
     def forward(self, x, feature_layers):
@@ -150,12 +226,14 @@ class VGG19(torch.nn.Module):
         conv3_2 = self.conv3_2(self.pad(relu3_1))
         relu3_2 = self.relu3_2(conv3_2)
         conv3_3 = self.conv3_3(self.pad(relu3_2))
+        # conv3_3 = self.conv3_3(relu3_2)
         relu3_3 = self.relu3_3(conv3_3)
         conv3_4 = self.conv3_4(self.pad(relu3_3))
         relu3_4 = self.relu3_4(conv3_4)
         pool3 = self.pool3(relu3_4)
 
         # level 4
+        pool3 = self.resnet(pool3)  # resblock
         pool3 = self.pad(pool3)
         conv4_1 = self.conv4_1(pool3)
         relu4_1 = self.relu4_1(conv4_1)
@@ -173,10 +251,10 @@ class VGG19(torch.nn.Module):
         relu5_1 = self.relu5_1(conv5_1)
         conv5_2 = self.conv5_2(self.pad(relu5_1))
         relu5_2 = self.relu5_2(conv5_2)
-        conv5_3 = self.conv5_3(self.pad(relu5_2))
-        relu5_3 = self.relu5_3(conv5_3)
-        conv5_4 = self.conv5_4(self.pad(relu5_3))
-        relu5_4 = self.relu5_4(conv5_4)
+        # conv5_3 = self.conv5_3(self.pad(relu5_2))
+        # relu5_3 = self.relu5_3(conv5_3)
+        # conv5_4 = self.conv5_4(self.pad(relu5_3))
+        # relu5_4 = self.relu5_4(conv5_4)
         # pool5 = self.pool5(relu5_4)
 
         out = {
@@ -198,41 +276,21 @@ class VGG19(torch.nn.Module):
 
             'relu5_1': relu5_1,
             'relu5_2': relu5_2,
-            'relu5_3': relu5_3,
-            'relu5_4': relu5_4,
-
-
-            #             'conv1_1': conv1_1,
-            #             'conv1_2': conv1_2,
-
-            #             'conv2_1': conv2_1,
-            #             'conv2_2': conv2_2,
-
-            #             'conv3_1': conv3_1,
-            #             'conv3_2': conv3_2,
-            #             'conv3_3': conv3_3,
-            #             'conv3_4': conv3_4,
-
-            #             'conv4_1': conv4_1,
-            #             'conv4_2': conv4_2,
-            #             'conv4_3': conv4_3,
-            #             'conv4_4': conv4_4,
-
-            #             'conv5_1': conv5_1,
-            #             'conv5_2': conv5_2,
-            #             'conv5_3': conv5_3,
-            #             'conv5_4': conv5_4,
+            # 'relu5_3': relu5_3,
+            # 'relu5_4': relu5_4,
         }
         return dict((key, value) for key, value in out.items() if key in feature_layers)
 
 
 if __name__ == '__main__':
-    x = torch.randn((10, 5, 256, 256), dtype=torch.float32)
-    model = VGG19()
-    for i in range(100):
-        print(i)
-        y = model(x, feature_layers=("relu1_1", "relu1_2", "relu2_1", "relu2_2",
-                                     "relu3_1", "relu3_2", "relu3_3", "relu3_4",
-                                     "relu4_1", "relu4_2", "relu4_3", "relu4_4",
-                                     "relu5_1", "relu4_2", "relu5_3", "relu5_4"))
-        a = 3
+    x = torch.randn((1, 3, 256, 256), dtype=torch.float32)
+    model = VGG19_S()
+    y = model(x, feature_layers=("relu1_1", "relu1_2", "relu2_1", "relu2_2",
+                                 "relu3_1", "relu3_2", "relu3_3", "relu3_4",
+                                 "relu4_1", "relu4_2", "relu4_3", "relu4_4",
+                                 "relu5_1", "relu5_2"))  # , "relu5_3", "relu5_4"
+    for key, value in y.items():
+        print(key, value.shape)
+    print(model.conv3_1.in_channels, model.conv3_4.out_channels)
+    print(model.conv4_1.in_channels, model.conv4_2.out_channels)
+    print(model.conv4_1.kernel_size, model.conv4_2.out_channels)
