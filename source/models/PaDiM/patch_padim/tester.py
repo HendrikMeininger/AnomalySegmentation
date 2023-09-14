@@ -1,50 +1,49 @@
 import math
-from os.path import join
-from typing import Tuple, List
 import gc
-
 import numpy as np
 import torch
 import torchvision
-from torch.utils.data import DataLoader
 import torchvision.transforms.functional as TF
 import torch.nn.functional as F
-from source.datasets.test_dataset import TestDataset
+from os.path import join
+from typing import Tuple, List, Dict
+
+from PIL import Image
+from torch.utils.data import DataLoader
+from torchvision.transforms import transforms, Resize
+
+import source.evaluation.eval as evaluation
+from source.datasets.dataset import Dataset
 from source.utils import visualization
 from source.models.PaDiM.backbone.padim import PaDiM
-import source.evaluation.eval as evaluation
+from source.models.PaDiM.base_padim.tester import Tester as BaseTester
 
 
-class Tester(object):
+class Tester(BaseTester):
 
     # region init
 
-    def __init__(self, dataset, model_dir: str, debugging: bool = False, augmentation: bool = False,
-                 image_size: int = 256, mask_size: int = 1024, backbone="resnet18"):
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    def __init__(self, model_path: str, debugging: bool = False,
+                 image_size: int = 256, mask_size: int = 1024, patch_size: int = 1024,
+                 use_self_ensembling: bool = False,
+                 rot_90: bool = False, rot_180: bool = False, rot_270: bool = False, h_flip: bool = False,
+                 h_flip_rot_90: bool = False, h_flip_rot_180: bool = False, h_flip_rot_270: bool = False,
+                 integration_limit: float = 0.3, backbone: str = "resnet18"):
+        self.patch_size = patch_size
+        self.resize_transform = Resize(size=image_size, interpolation=TF.InterpolationMode.BILINEAR)
 
-        self.dataset = dataset
-        self.model_dir = model_dir
-        self.debugging = debugging
-        self.augmentation = augmentation
-        self.image_size = image_size
-        self.mask_size = mask_size
-        self.backbone = backbone
+        super().__init__(model_path=model_path, debugging=debugging, image_size=image_size,
+                         mask_size=mask_size, use_self_ensembling=use_self_ensembling, rot_90=rot_90,
+                         rot_180=rot_180, rot_270=rot_270, h_flip=h_flip, h_flip_rot_90=h_flip_rot_90,
+                         h_flip_rot_180=h_flip_rot_180, h_flip_rot_270=h_flip_rot_270,
+                         integration_limit=integration_limit, backbone=backbone)
 
-        self.batch_size = 1
-        self.integration_limit = 0.3
+    def __load_model(self):
+        self.padim_big = self.__load_patch_model(join(self.model_path, "big"))
+        self.padim_medium = self.__load_patch_model(join(self.model_path, "medium"))
+        self.padim_small = self.__load_patch_model(join(self.model_path, "small"))
 
-        self.resize_transform = \
-            torchvision.transforms.Resize(size=256, interpolation=TF.InterpolationMode.BILINEAR)
-
-        self.__load_models()
-
-    def __load_models(self):
-        self.padim_big = self.__load_model(join(self.model_dir, "big"))
-        self.padim_medium = self.__load_model(join(self.model_dir, "medium"))
-        self.padim_small = self.__load_model(join(self.model_dir, "small"))
-
-    def __load_model(self, model_path):
+    def __load_patch_model(self, model_path):
         n = np.load(join(model_path, "n.npy")).item()
         means = np.load(join(model_path, "means.npy"))
         covs = np.load(join(model_path, "covs.npy"))
@@ -55,75 +54,12 @@ class Tester(object):
                                      embedding_ids=embedding_ids,
                                      backbone=self.backbone,
                                      device=self.device,
-                                     img_size=256)
+                                     img_size=self.image_size)
         return padim
-
-    @classmethod
-    def from_dataset_dir(cls, dataset_dir: str, model_dir: str, debugging: bool = False, augmentation: bool = False,
-                         image_size: int = 1024, mask_size: int = 1024, backbone="resnet18"):
-        test_dataset = TestDataset(path_to_dataset=dataset_dir, image_size=image_size, mask_size=mask_size)
-        return cls(dataset=test_dataset, model_dir=model_dir, debugging=debugging, augmentation=augmentation,
-                   image_size=image_size, backbone=backbone, mask_size=mask_size)
 
     # endregion
 
-    # region public methods
-
-    def evaluate(self):
-        scores, masks = self.__predict_images()
-        del self.padim_big
-        del self.padim_medium
-        del self.padim_small
-        del self.dataset
-        gc.collect()
-
-        evaluation.print_metrics(scores=scores, masks=masks)
-
-    def display_predictions(self):
-        test_loader = DataLoader(dataset=self.dataset, batch_size=1)
-
-        for original, preprocessed, mask in test_loader:
-            if self.augmentation:
-                score = self.__score_with_augmentation(preprocessed)
-            else:
-                score = self.__score(preprocessed)
-
-            original = original.squeeze()
-            mask = mask.squeeze()
-            binary_score = evaluation.get_binary_score(score)
-            visualization.display_images(img_list=[original, mask, score, binary_score],
-                                         titles=['original', 'ground_truth', 'score', 'binary_score'],
-                                         cols=3)
-
-    # end region
-
     # region private methods
-
-    def __predict_images(self) -> Tuple[List[np.array], List[np.array]]:
-        test_dataloader = DataLoader(dataset=self.dataset, batch_size=1, shuffle=False)
-
-        scores = []
-        masks = []
-
-        number_of_paths = len(self.dataset)
-        if self.debugging:
-            print("Testing ", number_of_paths, " images.")
-        count = 1
-
-        for _, img, mask in test_dataloader:
-            if count % 10 == 0 and self.debugging:
-                print("Predicting img {}/{}".format(count, number_of_paths))
-            count += 1
-
-            if self.augmentation:
-                score = self.__score_with_augmentation(img)
-            else:
-                score = self.__score(img)
-
-            scores.append(score)
-            masks.append(mask.squeeze().numpy())
-
-        return scores, masks
 
     def __score(self, img_input) -> np.array:
         big_patches_score = self.__score_big_patches(img_input)
@@ -134,15 +70,15 @@ class Tester(object):
 
         return final_score
 
-    def __calc_final_score(self, big, medium, small):
+    def __calc_final_score(self, big, medium, small) -> np.array:
         # score = np.max(big, np.max(medium, small))
         score = (big + medium + small) / 3
         return score
 
-    def __score_big_patches(self, img):
+    def __score_big_patches(self, img) -> np.array:
         return self.__score_patch(img, self.padim_big, 1024)
 
-    def __score_medium_patches(self, img):
+    def __score_medium_patches(self, img) -> np.array:
         score = np.zeros(shape=(self.mask_size, self.mask_size), dtype=float)
 
         width, height = 512, 512
@@ -158,7 +94,7 @@ class Tester(object):
 
         return score
 
-    def __score_small_patches(self, img):
+    def __score_small_patches(self, img) -> np.array:
         score = np.zeros(shape=(self.mask_size, self.mask_size), dtype=float)
 
         width, height = 256, 256
@@ -174,7 +110,7 @@ class Tester(object):
 
         return score
 
-    def __score_patch(self, patch, model, out_size):
+    def __score_patch(self, patch, model, out_size) -> np.array:
         img = self.resize_transform(patch).to(self.device)
 
         distances = model.predict(img)
@@ -187,62 +123,23 @@ class Tester(object):
 
         return raw_score
 
-    def __score_with_augmentation(self, img_input):
-        score = self.__score(img_input)
-        score_list = [score]
-
-        flip_score_list = self.__get_flip_scores(img_input)
-        score_list = score_list + flip_score_list
-
-        rotation_score_list = self.__get_rotation_scores(img_input)
-        score_list = score_list + rotation_score_list
-
+    def __score_with_augmentation(self, img_input) -> np.array:
+        score_list = self.__get_self_ensembling_scores(img_input)
         final_score = self.__combine_scores(score_list)
+
         return final_score
 
-    def __get_flip_scores(self, img_input):
-        # Flip the image vertically
-        vertical_flip = torch.flip(img_input, dims=[2])
-        vertical_flip_score = self.__score(vertical_flip)
-        vertical_flip_score = np.flipud(vertical_flip_score)
+    def __preprocess_img(self, image_path: str, mean: List[float], std: List[float]):
+        original = Image.open(image_path).convert('RGB')
 
-        # Flip the image horizontally
-        horizontal_flip = torch.flip(img_input, dims=[3])
-        horizontal_flip_score = self.__score(horizontal_flip)
-        horizontal_flip_score = np.fliplr(horizontal_flip_score)
+        normalize = transforms.Normalize(mean=mean, std=std)
+        resize = torchvision.transforms.Resize(size=self.patch_size, interpolation=TF.InterpolationMode.BILINEAR)
 
-        # Flip the image horizontally and vertically
-        double_flip = torch.flip(vertical_flip, dims=[3])
-        double_flip_score = self.__score(double_flip)
-        double_flip_score = np.flipud(np.fliplr(double_flip_score))
+        self.transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
+        preprocessed = self.transform(original)
 
-        scores = [vertical_flip_score, horizontal_flip_score, double_flip_score]
+        preprocessed = preprocessed[None, :]
 
-        return scores
-
-    def __get_rotation_scores(self, img_input):
-        # Rotate image 90
-        rotated_90 = TF.rotate(img_input, -90)
-        rotated_90_score = self.__score(rotated_90)
-        rotated_90_score = np.rot90(rotated_90_score)
-
-        # Rotate image 180
-        rotated_180 = TF.rotate(img_input, -180)
-        rotated_180_score = self.__score(rotated_180)
-        rotated_180_score = np.rot90(rotated_180_score, k=2)
-
-        # Rotate image 270
-        rotated_270 = TF.rotate(img_input, -270)
-        rotated_270_score = self.__score(rotated_270)
-        rotated_270_score = np.rot90(rotated_270_score, k=3)
-
-        scores = [rotated_90_score, rotated_180_score, rotated_270_score]
-
-        return scores
-
-    def __combine_scores(self, score_list):
-        score_list = np.mean(score_list, axis=0)
-
-        return score_list
+        return preprocessed
 
     # end region

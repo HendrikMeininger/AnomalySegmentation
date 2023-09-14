@@ -1,8 +1,8 @@
 import os
 from typing import List, Tuple
-
 from torch.utils.data import DataLoader
 
+from source.datasets.test_dataset import TestDataset
 from source.datasets.train_dataset import TrainDataset
 from source.datasets.patch_train_dataset import PatchTrainDataset
 
@@ -61,7 +61,11 @@ class Dataset(object):
         return self.__get_patches_dataloader(batch_size=batch_size, img_size=self.img_size * 4)
 
     def get_test_dataloader(self) -> DataLoader:
-        pass
+        test_dataset = TestDataset(path_to_dataset=self.path_to_dataset, mask_size=self.mask_size,
+                                   image_size=self.img_size, mean=self.mean, std=self.std)
+        test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False)
+
+        return test_loader
 
     # endregion
 
@@ -69,11 +73,14 @@ class Dataset(object):
 
     def __get_patches_dataloader(self, batch_size: int, img_size: int):
         image_paths = self.__get_train_img_paths()
-        patch_train_data = PatchTrainDataset(image_paths=image_paths, patch_size=self.img_size,
-                                             image_size=img_size, imagenet_dir=self.imagenet_dir,
-                                             horizontal_flip=True, vertical_flip=True, rotate=True,
-                                             adjust_sharpness=False, auto_contrast=False,
-                                             color_jitter=False, create_anomaly=False)
+        patch_train_data = PatchTrainDataset(image_paths=image_paths, imagenet_dir=self.imagenet_dir,
+                                             patch_size=self.img_size, img_size=img_size,
+                                             mask_size=self.mask_size, rot_90=self.rot_90, rot_180=self.rot_180,
+                                             rot_270=self.rot_270, h_flip=self.h_flip, h_flip_rot_90=self.h_flip_rot_90,
+                                             h_flip_rot_180=self.h_flip_rot_180, h_flip_rot_270=self.h_flip_rot_270,
+                                             self_supervised_training=self.self_supervised_training,
+                                             mean=self.mean, std=self.std, dfc_anomaly_size=self.dfc_anomaly_size,
+                                             method=self.anomaly_creation_method, cutpaste_mode=self.cutpaste_mode)
         train_loader = DataLoader(dataset=patch_train_data, batch_size=batch_size, shuffle=True)
 
         return train_loader

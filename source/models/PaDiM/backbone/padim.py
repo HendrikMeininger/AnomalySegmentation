@@ -20,7 +20,7 @@ class PaDiM(PaDiMBase):
         self,
         num_embeddings: int = 100,
         device: Union[str, Device] = "cpu",
-        backbone: str = "resnet18",
+        backbone: str = "wide_resnet50",
         size: Union[None, Tuple[int, int]] = None,
     ):
         super(PaDiM, self).__init__(num_embeddings, device, backbone, size)

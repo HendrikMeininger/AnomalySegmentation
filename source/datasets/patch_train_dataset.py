@@ -3,6 +3,7 @@ from typing import List, Tuple
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
+
 from source.datasets.anomaly_creator.anomaly_creator import AnomalyCreator
 
 """
@@ -53,12 +54,7 @@ class PatchTrainDataset(Dataset):
 
     def __getitem__(self, index):
         img = self.images[index]
-        transformed_img = self.augmentation_transform(img)
-
-        if self.rotate:
-            if random.random() < 0.5:
-                degrees = random.choice(self.rotations)
-                transformed_img = transformed_img.rotate(degrees)
+        augmented_img = self.__augment_img(img)
 
         images_normal = []
         images_abnormal = []
@@ -67,11 +63,11 @@ class PatchTrainDataset(Dataset):
 
         width, height = self.patch_size, self.patch_size
 
-        for x in range(0, transformed_img.size[0], width):
-            for y in range(0, transformed_img.size[1], height):
-                patch = transformed_img.crop(box=(x, y, x + width, y + height))
+        for x in range(0, augmented_img.size[0], width):
+            for y in range(0, augmented_img.size[1], height):
+                patch = augmented_img.crop(box=(x, y, x + width, y + height))
 
-                if self.create_anomaly:
+                if self.self_supervised_training:
                     img_normal, img_abnormal, mask_normal, mask_abnormal = \
                         self.anomaly_creator(patch)
 
@@ -88,7 +84,7 @@ class PatchTrainDataset(Dataset):
                     normal_image_patch = self.transform(patch)
                     images_normal.append(normal_image_patch)
 
-        if self.create_anomaly:
+        if self.self_supervised_training:
             return images_normal, images_abnormal, masks_normal, masks_abnormal
         else:
             return images_normal
