@@ -91,7 +91,6 @@ class Tester(object):
                                          titles=['original', 'ground_truth', 'score', 'binary_score'],
                                          cols=3)
 
-
     # endregion
 
     # region private methods

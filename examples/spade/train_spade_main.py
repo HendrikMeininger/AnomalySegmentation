@@ -1,4 +1,4 @@
-from source.models.SPADE.trainer import Trainer
+from source.models.SPADE.base_spade.trainer import Trainer
 from source.utils.performance_measurement import Timer
 
 
