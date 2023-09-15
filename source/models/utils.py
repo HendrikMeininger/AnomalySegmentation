@@ -96,34 +96,13 @@ class BaseTester(object):
 
     # endregion
 
-    # region private methods
+    # region protected methods
 
-    def __predict_images(self, dataset: Dataset) -> Tuple[List[np.array], List[np.array]]:
-        test_dataloader: DataLoader = dataset.get_test_dataloader()
+    def _log_message(self, message):
+        if self.debugging:
+            print(message)
 
-        number_of_paths = len(test_dataloader.dataset)
-        self.__log_message(f"Testing {number_of_paths} images.")
-        count = 1
-
-        scores = []
-        masks = []
-
-        for _, preprocessed, mask in test_dataloader:
-            if count % 10 == 0:
-                self.__log_message("Predicting img {}/{}".format(count, number_of_paths))
-            count += 1
-
-            if self.use_self_ensembling:
-                score = self.score_with_augmentation(preprocessed)
-            else:
-                score = self.score(preprocessed)
-
-            scores.append(score)
-            masks.append(mask.squeeze().numpy())
-
-        return scores, masks
-
-    def __get_self_ensembling_scores(self, img_input) -> List[np.array]:
+    def _get_self_ensembling_scores(self, img_input) -> List[np.array]:
         score = self.score(img_input)
         score_list = [score]
 
@@ -165,13 +144,38 @@ class BaseTester(object):
 
         return score_list
 
-    def __combine_scores(self, score_list):
+    def _combine_scores(self, score_list):
         res = np.mean(score_list, axis=0)
 
         return res
 
-    def __log_message(self, message):
-        if self.debugging:
-            print(message)
+    # endregion
+
+    # region private methods
+
+    def __predict_images(self, dataset: Dataset) -> Tuple[List[np.array], List[np.array]]:
+        test_dataloader: DataLoader = dataset.get_test_dataloader()
+
+        number_of_paths = len(test_dataloader.dataset)
+        self._log_message(f"Testing {number_of_paths} images.")
+        count = 1
+
+        scores = []
+        masks = []
+
+        for _, preprocessed, mask in test_dataloader:
+            if count % 10 == 0:
+                self._log_message("Predicting img {}/{}".format(count, number_of_paths))
+            count += 1
+
+            if self.use_self_ensembling:
+                score = self.score_with_augmentation(preprocessed)
+            else:
+                score = self.score(preprocessed)
+
+            scores.append(score)
+            masks.append(mask.squeeze().numpy())
+
+        return scores, masks
 
     # endregion

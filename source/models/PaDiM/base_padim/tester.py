@@ -1,4 +1,6 @@
 import math
+from abc import ABC
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -14,7 +16,7 @@ from source.models.utils import BaseTester
 """
 
 
-class Tester(BaseTester):
+class Tester(BaseTester, ABC):
 
     # region init
 
@@ -63,8 +65,8 @@ class Tester(BaseTester):
         return raw_score
 
     def __score_with_augmentation(self, img_input) -> np.array:
-        score_list = self.__get_self_ensembling_scores(img_input)
-        final_score = self.__combine_scores(score_list)
+        score_list = self._get_self_ensembling_scores(img_input)
+        final_score = self._combine_scores(score_list)
 
         return final_score
 

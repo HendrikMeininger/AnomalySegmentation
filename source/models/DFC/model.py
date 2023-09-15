@@ -1,8 +1,12 @@
 import os
+import numpy as np
 import torch
+from PIL import Image
+from typing import Tuple
 from typing_extensions import Literal
 
 from source.datasets.dataset import Dataset
+from source.utils import visualization
 from source.models.DFC.base_dfc.tester import Tester
 from source.models.DFC.patch_dfc.tester import Tester as PatchTester
 from source.models.DFC.base_dfc.trainer import Trainer
@@ -65,7 +69,8 @@ class DFC(object):
 
         trainer.train()
 
-    def eval(self, dataset: Dataset, debugging: bool = False, self_ensembling: bool = False,
+    def eval(self, dataset: Dataset, dataset_type: _DATASET_TYPES, pretrained_weights_dir: str = None,
+             debugging: bool = False, self_ensembling: bool = False,
              image_size: int = 256, mask_size: int = 1024,
              rot_90: bool = False, rot_180: bool = False, rot_270: bool = False,
              h_flip: bool = False, h_flip_rot_90: bool = False,
@@ -77,14 +82,16 @@ class DFC(object):
             raise Exception("Invalid model.")
 
         if self.use_patches:
-            tester = PatchTester(model_path=self.model_path, debugging=debugging,
+            tester = PatchTester(model_path=self.model_path, debugging=debugging, dataset_type=dataset_type,
+                                 pretrained_weights_dir=pretrained_weights_dir,
                                  image_size=image_size, mask_size=mask_size, use_self_ensembling=self_ensembling,
                                  rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
                                  h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
                                  h_flip_rot_270=h_flip_rot_270,
                                  integration_limit=integration_limit)
         else:
-            tester = Tester(model_path=self.model_path, debugging=debugging,
+            tester = Tester(model_path=self.model_path, debugging=debugging, dataset_type=dataset_type,
+                            pretrained_weights_dir=pretrained_weights_dir,
                             image_size=image_size, mask_size=mask_size, use_self_ensembling=self_ensembling,
                             rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
                             h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
@@ -92,6 +99,72 @@ class DFC(object):
                             integration_limit=integration_limit)
 
         tester.evaluate(dataset=dataset)
+
+    def display_predictions(self, dataset: Dataset, dataset_type: _DATASET_TYPES, pretrained_weights_dir: str = None,
+                            debugging: bool = False, self_ensembling: bool = False,
+                            image_size: int = 256, mask_size: int = 1024,
+                            rot_90: bool = False, rot_180: bool = False, rot_270: bool = False,
+                            h_flip: bool = False, h_flip_rot_90: bool = False,
+                            h_flip_rot_180: bool = False, h_flip_rot_270: bool = False) -> None:
+        if not self.trained:
+            raise Exception("Model not trained.")
+        if not self.valid_model:
+            raise Exception("Invalid model.")
+
+        if self.use_patches:
+            tester = PatchTester(model_path=self.model_path, dataset_type=dataset_type,
+                                 pretrained_weights_dir=pretrained_weights_dir, debugging=debugging,
+                                 image_size=image_size, mask_size=mask_size, use_self_ensembling=self_ensembling,
+                                 rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
+                                 h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                                 h_flip_rot_270=h_flip_rot_270)
+        else:
+            tester = Tester(model_path=self.model_path, dataset_type=dataset_type,
+                            pretrained_weights_dir=pretrained_weights_dir, debugging=debugging,
+                            image_size=image_size, mask_size=mask_size, use_self_ensembling=self_ensembling,
+                            rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
+                            h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                            h_flip_rot_270=h_flip_rot_270)
+
+        tester.display_predictions(dataset=dataset)
+
+    def predict(self, image_path: str, display_prediction: bool, dataset_type: _DATASET_TYPES,
+                pretrained_weights_dir: str = None, debugging: bool = False,
+                mean: Tuple[float] = (0.485, 0.456, 0.406), std: Tuple[float] = (0.229, 0.224, 0.225),
+                self_ensembling: bool = False, image_size: int = 256,
+                rot_90: bool = False, rot_180: bool = False, rot_270: bool = False,
+                h_flip: bool = False, h_flip_rot_90: bool = False,
+                h_flip_rot_180: bool = False, h_flip_rot_270: bool = False) -> Tuple[np.array, np.array]:
+        if not self.trained:
+            raise Exception("Model not trained.")
+        if not self.valid_model:
+            raise Exception("Invalid model.")
+
+        if self.use_patches:
+            tester = PatchTester(model_path=self.model_path, dataset_type=dataset_type,
+                                 pretrained_weights_dir=pretrained_weights_dir, debugging=debugging,
+                                 image_size=image_size, use_self_ensembling=self_ensembling,
+                                 rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
+                                 h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                                 h_flip_rot_270=h_flip_rot_270)
+        else:
+            tester = Tester(model_path=self.model_path, dataset_type=dataset_type,
+                            pretrained_weights_dir=pretrained_weights_dir, debugging=debugging,
+                            image_size=image_size, use_self_ensembling=self_ensembling,
+                            rot_90=rot_90, rot_180=rot_180, rot_270=rot_270, h_flip=h_flip,
+                            h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                            h_flip_rot_270=h_flip_rot_270)
+
+        score, binary_score = tester.predict(image_path=image_path, mean=mean, std=std)
+
+        if display_prediction:
+            original = Image.open(image_path).convert('RGB')
+
+            visualization.display_images(img_list=[original, score, binary_score],
+                                         titles=['original', 'score', 'binary_score'],
+                                         cols=3)
+
+        return score, binary_score
 
     # endregion
 

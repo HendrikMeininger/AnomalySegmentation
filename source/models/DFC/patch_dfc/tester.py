@@ -19,6 +19,7 @@ from source.models.utils import BaseTester
 
 
 class Tester(BaseTester):
+
     # region init
 
     _DATASET_TYPES = Literal["textures", "objects"]
@@ -46,9 +47,9 @@ class Tester(BaseTester):
         self.__load_models()
 
     def __load_models(self) -> None:
-        big_model_path = os.path.join(self.model_path, 'big')
-        medium_model_path = os.path.join(self.model_path, 'medium')
-        small_model_path = os.path.join(self.model_path, 'small')
+        big_model_path = os.path.join(self.model_path, 'big/match.pt')
+        medium_model_path = os.path.join(self.model_path, 'medium/match.pt')
+        small_model_path = os.path.join(self.model_path, 'small/match.pt')
 
         # pretrained feature extraction net
         self.feature_extraction = VGG19(pretrain=True, gradient=False, pool='avg',
@@ -86,8 +87,8 @@ class Tester(BaseTester):
     # region implement abstract methods
 
     def score_with_augmentation(self, img_input):
-        score_list = self.__get_self_ensembling_scores(img_input)
-        final_score = self.__combine_scores(score_list)
+        score_list = self._get_self_ensembling_scores(img_input)
+        final_score = self._combine_scores(score_list)
 
         return final_score
 
@@ -104,7 +105,7 @@ class Tester(BaseTester):
         original = Image.open(image_path).convert('RGB')
 
         normalize = transforms.Normalize(mean=mean, std=std)
-        resize = torchvision.transforms.Resize(size=self.patch_size, interpolation=TF.InterpolationMode.BILINEAR)
+        resize = torchvision.transforms.Resize(size=self.image_size, interpolation=TF.InterpolationMode.BILINEAR)
 
         transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
         preprocessed = transform(original)
@@ -127,7 +128,7 @@ class Tester(BaseTester):
         return self.__score_patch(img, self.feature_matching_big, threshold, 1024)
 
     def __score_medium_patches(self, img, threshold):
-        score = np.zeros(shape=(self.image_size, self.image_size), dtype=float)
+        score = np.zeros(shape=(self.mask_size, self.mask_size), dtype=float)
 
         width, height = 512, 512
 

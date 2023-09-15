@@ -1,3 +1,5 @@
+import os
+
 import torchvision.transforms.functional as TF
 import torch
 import torch.nn.functional as F
@@ -44,10 +46,10 @@ class Tester(BaseTester):
     def __init_feat_layers(self) -> None:
         if self.dataset_type == "objects":
             self.feat_layers = self._CNN_LAYERS_OBJECTS
-            self.__log_message("Using object layers.")
+            self._log_message("Using object layers.")
         elif self.dataset_type == "textures":
             self.feat_layers = self._CNN_LAYERS_TEXTURES
-            self.__log_message("Using texture layers.")
+            self._log_message("Using texture layers.")
         else:
             raise Exception("Unknown dataset type. Valid types: ['textures', 'objects']")
 
@@ -57,7 +59,7 @@ class Tester(BaseTester):
                                         pretrained_weights_dir=self.pretrained_weights_dir).to(self.device)
         # trained feature estimation net
         self.feature_matching = VGG19_S(pretrain=False, gradient=True, pool='avg').to(self.device)
-        self.feature_matching.load_state_dict(torch.load(self.model_path,
+        self.feature_matching.load_state_dict(torch.load(os.path.join(self.model_path, 'match.pt'),
                                                          map_location=torch.device(self.device)))
 
         self.feature_extraction.eval()
@@ -84,8 +86,8 @@ class Tester(BaseTester):
         return scores
 
     def score_with_augmentation(self, img_input) -> np.array:
-        score_list = self.__get_self_ensembling_scores(img_input)
-        final_score = self.__combine_scores(score_list)
+        score_list = self._get_self_ensembling_scores(img_input)
+        final_score = self._combine_scores(score_list)
 
         return final_score
 
