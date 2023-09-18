@@ -1,5 +1,4 @@
 import os
-
 import torchvision.transforms.functional as TF
 import torch
 import torch.nn.functional as F
@@ -67,7 +66,7 @@ class Tester(BaseTester):
 
     # endregion
 
-    # region prediction
+    # region implement abstract methods
 
     def score(self, img_input) -> np.array:  # returns score with shape (1024, 1024)
         img = img_input.to(self.device)

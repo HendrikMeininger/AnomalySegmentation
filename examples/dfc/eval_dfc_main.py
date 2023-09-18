@@ -8,14 +8,16 @@ _DATASET_TYPES = Literal["textures", "objects"]
 
 
 def main():
+    model_path = ''
+
     # model evaluation
     """
     Timer.start_timer()
 
-    dataset_name = 'leather'
-    eval_model(model_path=f'D:/models/PDFC/{dataset_name}',
+    path_to_dataset = ''
+    eval_model(model_path=model_path,
                self_ensembling=False,
-               path_to_dataset=f"D:/datasets/mvtec_anomaly_detection/{dataset_name}",
+               path_to_dataset=path_to_dataset,
                dataset_type='textures')
 
     Timer.log_time("Finished evaluation")
@@ -24,9 +26,8 @@ def main():
 
     # image prediction
     """
-    img_path = 'D:/datasets/mvtec_anomaly_detection/leather/test/cut/004.png'
-    dataset_name = 'leather'
-    predict_image(model_path=f'D:/models/PDFC/{dataset_name}',
+    img_path = ''
+    predict_image(model_path=model_path,
                   image_path=img_path,
                   dataset_type='textures',
                   self_ensembling=True,
@@ -34,11 +35,11 @@ def main():
     """
 
     # display predictions
-    dataset_name = 'leather'
-    display_predictions(model_path=f'D:/models/PDFC/{dataset_name}',
+    path_to_dataset = ''
+    display_predictions(model_path=model_path,
                         dataset_type='textures',
                         self_ensembling=False,
-                        path_to_dataset=f"D:/datasets/mvtec_anomaly_detection/{dataset_name}")
+                        path_to_dataset=path_to_dataset)
 
 
 def eval_model(model_path: str, self_ensembling: bool, path_to_dataset: str, dataset_type: _DATASET_TYPES):

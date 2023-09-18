@@ -54,13 +54,13 @@ class Trainer(object):
 
         train_outputs = [[], [], [], []]
 
-        for img_normal, img_abnormal, mask_normal, mask_abnormal in train_loader:
-            img_normal = img_normal.to(self.device)
+        for img in train_loader:
+            img = img.to(self.device)
             # model prediction
             with torch.no_grad():
-                pred = self.model(img_normal)
+                pred = self.model(img)
                 del pred
-                del img_normal
+                del img
             # get intermediate layer outputs
             for i in range(len(train_outputs)):
                 train_outputs[i].append(outputs[i])

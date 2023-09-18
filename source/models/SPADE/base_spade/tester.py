@@ -1,17 +1,18 @@
-from collections import OrderedDict
-from os.path import join
-
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from torchvision.models import wide_resnet50_2, Wide_ResNet50_2_Weights
 import torch.nn.functional as F
-from scipy.ndimage import gaussian_filter
-from torchvision.transforms import transforms
 import torchvision.transforms.functional as TF
-import source.evaluation.eval as evaluation
-from source.datasets.test_dataset import TestDataset
-from source.utils import visualization
+import torchvision
+from abc import ABC
+from collections import OrderedDict
+from os.path import join
+from typing import List
+from PIL import Image
+from torch import Tensor
+from torchvision.models import wide_resnet50_2, Wide_ResNet50_2_Weights
+from torchvision.transforms import transforms
+
+from source.models.utils import BaseTester
 
 """
     Implementation of Sub-Image Anomaly Detection with Deep Pyramid Correspondences
@@ -20,28 +21,36 @@ from source.utils import visualization
 """
 
 
-class Tester(object):
+class Tester(BaseTester, ABC):
 
     # region init
 
-    def __init__(self, dataset_dir: str, model_path: str, debugging: bool = False, augmentation: bool = False,
-                 image_size: int = 1024, mask_size: int = 1024, top_k: int = 5,
-                 v_flip=False, h_flip=False, rotate=False, rotation_degrees=None):
+    def __init__(self, model_path: str, debugging: bool = False,
+                 image_size: int = 256, mask_size: int = 1024, use_self_ensembling: bool = False,
+                 rot_90: bool = False, rot_180: bool = False, rot_270: bool = False, h_flip: bool = False,
+                 h_flip_rot_90: bool = False, h_flip_rot_180: bool = False, h_flip_rot_270: bool = False,
+                 integration_limit: float = 0.3, top_k: int = 5):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        self.model_path = model_path
-        self.debugging = debugging
-        self.augmentation = augmentation
-        self.image_size = image_size
+        super().__init__(model_path=model_path, debugging=debugging, image_size=image_size, mask_size=mask_size,
+                         use_self_ensembling=use_self_ensembling, rot_90=rot_90, rot_180=rot_180, rot_270=rot_270,
+                         h_flip=h_flip, h_flip_rot_90=h_flip_rot_90, h_flip_rot_180=h_flip_rot_180,
+                         h_flip_rot_270=h_flip_rot_270, integration_limit=integration_limit)
         self.top_k = top_k
-        self.mask_size = mask_size
-        self.v_flip = v_flip
-        self.h_flip = h_flip
-        self.rotate = rotate
-        self.rotation_degrees = rotation_degrees
 
-        self.dataset = TestDataset(path_to_dataset=dataset_dir, image_size=image_size, mask_size=1024)
         self.__load_model()
+        self.__register_hooks()
+
+    def __register_hooks(self):
+        self.outputs = []
+
+        def hook(module, input, output):
+            self.outputs.append(output)
+
+        self.model.layer1[-1].register_forward_hook(hook)
+        self.model.layer2[-1].register_forward_hook(hook)
+        self.model.layer3[-1].register_forward_hook(hook)
+        self.model.avgpool.register_forward_hook(hook)
 
     def __load_model(self):
         l1 = torch.from_numpy(np.load(join(self.model_path, "layer_1.npy"))).to(self.device)
@@ -57,98 +66,26 @@ class Tester(object):
 
     # endregion
 
-    # region public
+    # region implement abstract methods
 
-    def evaluate(self) -> None:
-        scores, masks = self.__predict_images()
-        evaluation.print_metrics(scores, masks)
-
-    def display_predictions(self) -> None:
-        test_loader = DataLoader(dataset=self.dataset, batch_size=1)
-
-        outputs = []
-
-        def hook(module, input, output):
-            outputs.append(output)
-
-        self.model.layer1[-1].register_forward_hook(hook)
-        self.model.layer2[-1].register_forward_hook(hook)
-        self.model.layer3[-1].register_forward_hook(hook)
-        self.model.avgpool.register_forward_hook(hook)
-
-        for original, preprocessed, mask in test_loader:
-            if self.augmentation:
-                score = self.__score_with_augmentation(preprocessed, outputs)
-            else:
-                score = self.__score(preprocessed, outputs)
-
-            binary_score = evaluation.get_binary_score(score)
-
-            original = original.squeeze()
-            mask = mask.squeeze()
-
-            visualization.display_images(img_list=[original, mask, score, binary_score],
-                                         titles=['original', 'ground_truth', 'score', 'binary_score'],
-                                         cols=3)
-
-    # endregion
-
-    # region private methods
-
-    def __predict_images(self):
-        test_dataloader = DataLoader(dataset=self.dataset, batch_size=1, shuffle=False)
-
-        outputs = []
-
-        def hook(module, input, output):
-            outputs.append(output)
-
-        self.model.layer1[-1].register_forward_hook(hook)
-        self.model.layer2[-1].register_forward_hook(hook)
-        self.model.layer3[-1].register_forward_hook(hook)
-        self.model.avgpool.register_forward_hook(hook)
-
-        scores = []
-        masks = []
-
-        number_of_paths = len(self.dataset)
-        if self.debugging:
-            print("Testing ", number_of_paths, " images.")
-        count = 1
-
-        for _, img, mask in test_dataloader:
-            if count % 10 == 0 and self.debugging:
-                print("Predicting img {}/{}".format(count, number_of_paths))
-            count += 1
-
-            if self.augmentation:
-                score = self.__score_with_augmentation(img, outputs)
-            else:
-                score = self.__score(img, outputs)
-
-            scores.append(score)
-            masks.append(mask.squeeze().numpy())
-
-        return scores, masks
-
-    def __score(self, img, outputs):
+    def score(self, img_input) -> np.array:
         test_outputs = OrderedDict([('layer1', []), ('layer2', []), ('layer3', []), ('avgpool', [])])
         test_outputs_list = [[], [], [], []]
 
         with torch.no_grad():
-            self.model(img.to(self.device))
+            self.model(img_input.to(self.device))
 
-        for k, v in zip(test_outputs.keys(), outputs):
+        for k, v in zip(test_outputs.keys(), self.outputs):
             test_outputs[k].append(v)
-        test_outputs_list = [lst + [outputs[i]] for i, lst in enumerate(test_outputs_list)]
-        outputs.clear()
+        test_outputs_list = [lst + [self.outputs[i]] for i, lst in enumerate(test_outputs_list)]
+        self.outputs.clear()
 
         for k, v in test_outputs.items():
             test_outputs[k] = torch.cat(v, 0)
         test_outputs_list = [torch.stack(lst, dim=0) for lst in test_outputs_list]
 
-        dist_matrix = self.calc_dist_matrix(torch.flatten(test_outputs_list[3], 1),
-                                            torch.flatten(self.train_outputs[3], 1))
+        dist_matrix = self.__calc_dist_matrix(torch.flatten(test_outputs_list[3], 1),
+                                              torch.flatten(self.train_outputs[3], 1))
 
         # select K nearest neighbor and take average
         topk_values, topk_indexes = torch.topk(dist_matrix, k=self.top_k, dim=1, largest=False)
@@ -186,7 +123,7 @@ class Tester(object):
             score_map = torch.min(dist_matrix, dim=0)[0]
 
             score_map = F.interpolate(score_map.unsqueeze(0).unsqueeze(0), size=self.mask_size,
-                                          mode='bilinear', align_corners=False)
+                                      mode='bilinear', align_corners=False)
             score_maps.append(score_map)
 
         # average distance between the features
@@ -198,68 +135,30 @@ class Tester(object):
 
         return score_map
 
-    def __score_with_augmentation(self, img_input, outputs):
-        score = self.__score(img_input, outputs)
-        score_list = [score]
+    def score_with_augmentation(self, img_input):
+        score_list = self._get_self_ensembling_scores(img_input)
+        final_score = self._combine_scores(score_list)
 
-        score_list += self.__get_flip_scores(img_input, outputs)
-        if self.rotate:
-            score_list += self.__get_rotation_scores(img_input, outputs)
-
-        final_score = self.__combine_scores(score_list)
         return final_score
 
-    def __get_flip_scores(self, img_input, outputs):
-        scores = []
+    def preprocess_img(self, image_path: str, mean: List[float], std: List[float]) -> Tensor:
+        original = Image.open(image_path).convert('RGB')
 
-        if self.v_flip:
-            # Flip the image vertically
-            vertical_flip = torch.flip(img_input, dims=[2])
-            vertical_flip_score = self.__score(vertical_flip, outputs)
-            vertical_flip_score = np.flipud(vertical_flip_score)
-            scores.append(vertical_flip_score)
+        normalize = transforms.Normalize(mean=mean, std=std)
+        resize = torchvision.transforms.Resize(size=self.image_size, interpolation=TF.InterpolationMode.BILINEAR)
 
-        if self.h_flip:
-            # Flip the image horizontally
-            horizontal_flip = torch.flip(img_input, dims=[3])
-            horizontal_flip_score = self.__score(horizontal_flip, outputs)
-            horizontal_flip_score = np.fliplr(horizontal_flip_score)
-            scores.append(horizontal_flip_score)
+        transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
+        preprocessed = transform(original)
 
-        return scores
+        preprocessed = preprocessed[None, :]
 
-    def __get_rotation_scores(self, img_input, outputs):
-        res = []
+        return preprocessed
 
-        if 90 in self.rotation_degrees:
-            # Rotate image 90
-            rotated_90 = TF.rotate(img_input, -90)
-            rotated_90_score = self.__score(rotated_90, outputs)
-            rotated_90_score = np.rot90(rotated_90_score)
-            res.append(rotated_90_score)
+    # endregion
 
-        if 180 in self.rotation_degrees:
-            # Rotate image 180
-            rotated_180 = TF.rotate(img_input, -180)
-            rotated_180_score = self.__score(rotated_180, outputs)
-            rotated_180_score = np.rot90(rotated_180_score, k=2)
-            res.append(rotated_180_score)
+    # region private methods
 
-        if 270 in self.rotation_degrees:
-            # Rotate image 270
-            rotated_270 = TF.rotate(img_input, -270)
-            rotated_270_score = self.__score(rotated_270, outputs)
-            rotated_270_score = np.rot90(rotated_270_score, k=3)
-            res.append(rotated_270_score)
-
-        return res
-
-    def __combine_scores(self, score_list):
-        score_list = np.mean(score_list, axis=0)
-
-        return score_list
-
-    def calc_dist_matrix(self, x, y):
+    def __calc_dist_matrix(self, x, y):
         """Calculate Euclidean distance matrix with torch.tensor"""
         n = x.size(0)
         m = y.size(0)
@@ -267,6 +166,7 @@ class Tester(object):
         x = x.unsqueeze(1).expand(n, m, d)
         y = y.unsqueeze(0).expand(n, m, d)
         dist_matrix = torch.sqrt(torch.pow(x - y, 2).sum(2))
+
         return dist_matrix
 
     # endregion

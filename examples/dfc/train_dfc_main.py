@@ -6,9 +6,8 @@ from source.utils.performance_measurement import Timer
 def main():
     Timer.start_timer()
 
-    data = 'carpet'
-    path_to_dataset = f"D:/datasets/mvtec_anomaly_detection/{data}"
-    output_dir = 'C:/Vision4Quality/testmodel'
+    path_to_dataset = ''
+    output_dir = ''
 
     train_model_with_dataset(output_dir=output_dir, path_to_dataset=path_to_dataset)
 

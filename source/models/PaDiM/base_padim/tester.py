@@ -1,10 +1,16 @@
 import math
-from abc import ABC
-
+import torchvision
+import torchvision.transforms.functional as TF
 import numpy as np
 import torch
 import torch.nn.functional as F
+from abc import ABC
+from typing import List
 from os.path import join
+from PIL import Image
+from torch import Tensor
+from torchvision.transforms import transforms
+
 from source.models.PaDiM.backbone.padim import PaDiM
 from source.models.utils import BaseTester
 
@@ -51,9 +57,9 @@ class Tester(BaseTester, ABC):
 
     # end region
 
-    # region private methods
+    # region implement abstract methods
 
-    def __score(self, img_input) -> np.array:  # returns score with shape (1024, 1024)
+    def score(self, img_input) -> np.array:  # returns score with shape (1024, 1024)
         distances = self.padim.predict(img_input)
         w = int(math.sqrt(distances.numel()))
         raw_score = distances.reshape(1, 1, w, w)
@@ -64,10 +70,23 @@ class Tester(BaseTester, ABC):
 
         return raw_score
 
-    def __score_with_augmentation(self, img_input) -> np.array:
+    def score_with_augmentation(self, img_input) -> np.array:
         score_list = self._get_self_ensembling_scores(img_input)
         final_score = self._combine_scores(score_list)
 
         return final_score
+
+    def preprocess_img(self, image_path: str, mean: List[float], std: List[float]) -> Tensor:
+        original = Image.open(image_path).convert('RGB')
+
+        normalize = transforms.Normalize(mean=mean, std=std)
+        resize = torchvision.transforms.Resize(size=self.image_size, interpolation=TF.InterpolationMode.BILINEAR)
+
+        transform = transforms.Compose([transforms.ToTensor(), normalize, resize])
+        preprocessed = transform(original)
+
+        preprocessed = preprocessed[None, :]
+
+        return preprocessed
 
     # endregion
