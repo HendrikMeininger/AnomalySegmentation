@@ -1,39 +1,25 @@
-from source.models.SPADE.trainer import Trainer
+from source.datasets.dataset import Dataset
+from source.models.SPADE.model import SPADE
 from source.utils.performance_measurement import Timer
 
 
 def main():
     Timer.start_timer()
-    train_model("carpet")
-    train_model("grid")
-    train_model("leather")
-    train_model("tile")
-    train_model("wood")
 
-    train_model("bottle")
-    train_model("cable")
-    train_model("capsule")
-    train_model("hazelnut")
-    train_model("metal_nut")
-    train_model("pill")
-    train_model("screw")
-    train_model("toothbrush")
-    train_model("transistor")
-    train_model("zipper")
-    Timer.log_time("Finished Training")
+    path_to_dataset = ''
+    output_dir = ''
+
+    train_model_with_dataset(output_dir=output_dir, path_to_dataset=path_to_dataset)
+
+    Timer.log_time("Finished training")
     Timer.print_task_times()
 
 
-def train_model(data):
-    path_to_dataset = f"E:/datasets/mvtec_anomaly_detection/{data}"
-    trainer = Trainer(output_dir=f"E:/models/SPADE/SPADE_{data}",
-                      path_to_dataset=path_to_dataset,
-                      image_size=256,
-                      batch_size=32)
-    trainer.train()
+def train_model_with_dataset(output_dir: str, path_to_dataset: str):
+    dataset: Dataset = Dataset(path_to_dataset=path_to_dataset, img_size=256)
 
-    del trainer
-    print(f"Finished training {data}")
+    model: SPADE = SPADE()
+    model.train(dataset=dataset, output_dir=output_dir, debugging=True)
 
 
 if __name__ == "__main__":

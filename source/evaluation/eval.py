@@ -16,7 +16,7 @@ from sklearn.metrics import roc_auc_score
 """
 
 
-def print_metrics(scores, masks, binary_scores=None):
+def get_metrics(scores, masks, binary_scores=None, debugging: bool = False):
     if binary_scores is None:
         binary_scores = calculate_binary_scores(scores)
 
@@ -26,12 +26,18 @@ def print_metrics(scores, masks, binary_scores=None):
                                          integration_limit=0.3)
     avg_iou = calculate_avg_iou(ground_truth=masks, binary_scores=binary_scores)
 
-    print("Image level ROC-AUC: ", image_level_roc)
-    print("Pixel level ROC-AUC: ", pixel_level_roc)
-    print("PRO-AUC: ", au_pro)
-    print("IoU: ", avg_iou)
+    if debugging:
+        print("Image level ROC-AUC: ", image_level_roc)
+        print("Pixel level ROC-AUC: ", pixel_level_roc)
+        print("PRO-AUC: ", au_pro)
+        print("IoU: ", avg_iou)
 
-    print(f"({round(pixel_level_roc * 100, 2)}, {round(au_pro * 100, 2)}, {round(avg_iou * 100, 2)})")
+        print(f"({round(pixel_level_roc * 100, 1)}, {round(au_pro * 100, 1)}, {round(avg_iou * 100, 1)})")
+
+    return {"Pixel-ROC-AUC": pixel_level_roc,
+            "Image-ROC-AUC": image_level_roc,
+            "PRO-AUC": au_pro,
+            "IoU": iou}
 
 
 def calculate_binary_scores(scores):

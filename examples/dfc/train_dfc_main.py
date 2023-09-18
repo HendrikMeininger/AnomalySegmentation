@@ -1,19 +1,26 @@
-from source.datasets import train_dataset
-from source.models.DFC.trainer import Trainer
+from source.datasets.dataset import Dataset
+from source.models.DFC.model import DFC
+from source.utils.performance_measurement import Timer
 
 
 def main():
-    path_to_dataset = "E:/datasets/mvtec_anomaly_detection/capsule"
-    image_paths = train_dataset.get_train_img_paths(path_to_dataset)
-    trainer = Trainer(output_dir="E:/models/DFC/capsule",
-                      image_paths=image_paths,
-                      dataset_type="objects",
-                      batch_size=12,
-                      n_epochs=301,
-                      pretrained_weights_dir=None,
-                      imagenet_dir="E:/imagenet/data",
-                      dataset_dir=path_to_dataset)
-    trainer.train()
+    Timer.start_timer()
+
+    path_to_dataset = ''
+    output_dir = ''
+
+    train_model_with_dataset(output_dir=output_dir, path_to_dataset=path_to_dataset)
+
+    Timer.log_time("Finished training")
+    Timer.print_task_times()
+
+
+def train_model_with_dataset(output_dir: str, path_to_dataset: str):
+    dataset: Dataset = Dataset(path_to_dataset=path_to_dataset, img_size=256, self_supervised_training=True)
+
+    model: DFC = DFC()
+    model.train(dataset=dataset, dataset_type='textures', output_dir=output_dir,
+                debugging=True, use_patches=True, epochs=3)
 
 
 if __name__ == "__main__":
